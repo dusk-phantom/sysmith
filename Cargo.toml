@@ -1,0 +1,16 @@
+[package]
+name = "sy-smith"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sy_smith"
+path = "./src/lib.rs"
+
+[[bin]]
+name = "sy-smith"
+path = "./src/main.rs"
+
+
+[dependencies]
+libfuzzer-sys = "0.4.7"
