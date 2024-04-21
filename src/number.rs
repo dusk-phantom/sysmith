@@ -1,10 +1,6 @@
 #[inline]
 pub fn u82bool(data: &u8) -> bool {
-    if data % 2 == 0 {
-        true
-    } else {
-        false
-    }
+    data % 2 == 0
 }
 
 pub fn gen_number(data: &[u8; 5]) -> String {
