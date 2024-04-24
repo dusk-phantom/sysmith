@@ -4,26 +4,6 @@ use std::fs;
 use libfuzzer_sys::fuzz_target;
 
 use sy_smith::*;
-// #[inline]
-// fn u82bool(data: &u8) -> bool {
-//     if data % 2 == 0 {
-//         true
-//     } else {
-//         false
-//     }
-// }
-
-// fn gen_number(data: &[u8; 5]) -> String {
-//     let if_int = &data[0];
-//     let value = [data[1], data[2], data[3], data[4]];
-//     if u82bool(if_int) {
-//         let m: i32 = i32::from_be_bytes(value);
-//         m.to_string()
-//     } else {
-//         let m: f32 = f32::from_be_bytes(value);
-//         m.to_string()
-//     }
-// }
 
 fuzz_target!(|data: &[u8]| {
     if data.len() < 5 {
