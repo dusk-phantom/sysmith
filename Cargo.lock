@@ -34,16 +34,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "either"
-version = "1.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a47c1c47d2f5964e29c61246e81db715514cd532db6b5116a25ea3c03d6780a2"
-
-[[package]]
 name = "jobserver"
-version = "0.1.30"
+version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "685a7d121ee3f65ae4fddd72b25a04bb36b6af81bc0828f7d5434c0fe60fa3a2"
+checksum = "d2b099aaa34a9751c5bf0878add70444e1ed2dd73f347be99003d4577277de6e"
 dependencies = [
  "libc",
 ]
@@ -94,7 +88,6 @@ name = "sy-smith"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "either",
  "libfuzzer-sys",
 ]
 
