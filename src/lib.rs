@@ -1,5 +1,5 @@
-mod model;
+mod ast;
 mod number;
 
-pub use model::*;
+pub use ast::*;
 pub use number::*;
