@@ -1,11 +1,45 @@
-use std::fmt::Display;
+use std::collections::HashMap;
+use std::fmt::{Debug, Display};
 
 use libfuzzer_sys::arbitrary::{self, Unstructured};
 use libfuzzer_sys::arbitrary::{Arbitrary, Result};
 
-#[derive(Debug, Arbitrary)]
+/// All possible types
+#[derive(Debug, Clone)]
+pub enum Type {
+    Int,
+    Float,
+    Void,
+    Func(Box<Type>, Vec<Type>),
+    Array(Box<Type>, Vec<Option<usize>>),
+}
+
+/// Current type context
+pub struct Context {
+    pub ctx: HashMap<String, Type>,
+    pub env: HashMap<String, usize>,
+}
+
+#[derive(Debug, Clone)]
 pub struct CompUnit {
     pub global_items: Vec<GlobalItems>,
+}
+
+impl<'a> Arbitrary<'a> for CompUnit {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+        let mut global_items = Vec::new();
+        let mut c = Context {
+            ctx: HashMap::new(),
+            env: HashMap::new(),
+        };
+        loop {
+            let item = GlobalItems::arbitrary(u, &mut c)?;
+            global_items.push(item);
+            if u.arbitrary()? {
+                return Ok(CompUnit { global_items });
+            }
+        }
+    }
 }
 
 impl Display for CompUnit {
@@ -22,10 +56,20 @@ impl Display for CompUnit {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum GlobalItems {
     Decl(Decl),
     FuncDef(FuncDef),
+}
+
+impl GlobalItems {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(GlobalItems::Decl(Decl::arbitrary(u, c)?)),
+            1 => Ok(GlobalItems::FuncDef(FuncDef::arbitrary(u, c)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for GlobalItems {
@@ -37,10 +81,20 @@ impl Display for GlobalItems {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum Decl {
     ConstDecl(ConstDecl),
     VarDecl(VarDecl),
+}
+
+impl Decl {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(Decl::ConstDecl(ConstDecl::arbitrary(u, c)?)),
+            1 => Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for Decl {
@@ -52,10 +106,27 @@ impl Display for Decl {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct ConstDecl {
     pub btype: BType,
     pub const_def_vec: PVec<ConstDef>,
+}
+
+impl ConstDecl {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let btype = BType::arbitrary(u)?;
+        let mut const_def_vec = Vec::new();
+        loop {
+            let const_def = ConstDef::arbitrary(u, c)?;
+            const_def_vec.push(const_def);
+            if u.arbitrary()? {
+                return Ok(ConstDecl {
+                    btype,
+                    const_def_vec: PVec(const_def_vec),
+                });
+            }
+        }
+    }
 }
 
 impl Display for ConstDecl {
@@ -73,10 +144,20 @@ impl Display for ConstDecl {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum BType {
     Int,
     Float,
+}
+
+impl BType {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(BType::Int),
+            1 => Ok(BType::Float),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for BType {
@@ -88,11 +169,31 @@ impl Display for BType {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct ConstDef {
     pub ident: Ident,
     pub const_exp_vec: Vec<ConstExp>,
     pub const_init_val: ConstInitVal,
+}
+
+impl ConstDef {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let ident = Ident::arbitrary(u)?;
+        let mut const_exp_vec = Vec::new();
+        loop {
+            let const_exp = ConstExp::arbitrary(u, c)?;
+            const_exp_vec.push(const_exp);
+            if u.arbitrary()? {
+                break;
+            }
+        }
+        let const_init_val = ConstInitVal::arbitrary(u, c)?;
+        Ok(ConstDef {
+            ident,
+            const_exp_vec,
+            const_init_val,
+        })
+    }
 }
 
 impl Display for ConstDef {
@@ -111,10 +212,29 @@ impl Display for ConstDef {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum ConstInitVal {
     ConstExp(ConstExp),
     ConstInitValVec(Vec<ConstInitVal>),
+}
+
+impl ConstInitVal {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(ConstInitVal::ConstExp(ConstExp::arbitrary(u, c)?)),
+            1 => {
+                let mut const_init_val_vec = Vec::new();
+                loop {
+                    let const_init_val = ConstInitVal::arbitrary(u, c)?;
+                    const_init_val_vec.push(const_init_val);
+                    if u.arbitrary()? {
+                        return Ok(ConstInitVal::ConstInitValVec(const_init_val_vec));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for ConstInitVal {
@@ -133,10 +253,27 @@ impl Display for ConstInitVal {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct VarDecl {
     pub btype: BType,
     pub var_def_vec: PVec<VarDef>,
+}
+
+impl VarDecl {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let btype = BType::arbitrary(u)?;
+        let mut var_def_vec = Vec::new();
+        loop {
+            let var_def = VarDef::arbitrary(u, c)?;
+            var_def_vec.push(var_def);
+            if u.arbitrary()? {
+                return Ok(VarDecl {
+                    btype,
+                    var_def_vec: PVec(var_def_vec),
+                });
+            }
+        }
+    }
 }
 
 impl Display for VarDecl {
@@ -154,10 +291,42 @@ impl Display for VarDecl {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum VarDef {
     Array((Ident, Vec<ConstExp>)),
     ArrayInit((Ident, Vec<ConstExp>, InitVal)),
+}
+
+impl VarDef {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => {
+                let ident = Ident::arbitrary(u)?;
+                let mut const_exp_vec = Vec::new();
+                loop {
+                    let const_exp = ConstExp::arbitrary(u, c)?;
+                    const_exp_vec.push(const_exp);
+                    if u.arbitrary()? {
+                        return Ok(VarDef::Array((ident, const_exp_vec)));
+                    }
+                }
+            }
+            1 => {
+                let ident = Ident::arbitrary(u)?;
+                let mut const_exp_vec = Vec::new();
+                loop {
+                    let const_exp = ConstExp::arbitrary(u, c)?;
+                    const_exp_vec.push(const_exp);
+                    if u.arbitrary()? {
+                        break;
+                    }
+                }
+                let init_val = InitVal::arbitrary(u, c)?;
+                Ok(VarDef::ArrayInit((ident, const_exp_vec, init_val)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for VarDef {
@@ -186,10 +355,29 @@ impl Display for VarDef {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum InitVal {
     Exp(Exp),
     InitValVec(Vec<InitVal>),
+}
+
+impl InitVal {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(InitVal::Exp(Exp::arbitrary(u, c)?)),
+            1 => {
+                let mut init_val_vec = Vec::new();
+                loop {
+                    let init_val = InitVal::arbitrary(u, c)?;
+                    init_val_vec.push(init_val);
+                    if u.arbitrary()? {
+                        return Ok(InitVal::InitValVec(init_val_vec));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for InitVal {
@@ -208,10 +396,31 @@ impl Display for InitVal {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum FuncDef {
     NonParameterFuncDef((FuncType, Ident, Block)),
     ParameterFuncDef((FuncType, Ident, FuncFParams, Block)),
+}
+
+impl FuncDef {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => {
+                let func_type = FuncType::arbitrary(u)?;
+                let ident = Ident::arbitrary(u)?;
+                let block = Block::arbitrary(u, c)?;
+                Ok(FuncDef::NonParameterFuncDef((func_type, ident, block)))
+            }
+            1 => {
+                let func_type = FuncType::arbitrary(u)?;
+                let ident = Ident::arbitrary(u)?;
+                let func_fparams = FuncFParams::arbitrary(u, c)?;
+                let block = Block::arbitrary(u, c)?;
+                Ok(FuncDef::ParameterFuncDef((func_type, ident, func_fparams, block)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for FuncDef {
@@ -223,11 +432,22 @@ impl Display for FuncDef {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum FuncType {
     Void,
     Int,
     Float,
+}
+
+impl FuncType {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 3 {
+            0 => Ok(FuncType::Void),
+            1 => Ok(FuncType::Int),
+            2 => Ok(FuncType::Float),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for FuncType {
@@ -240,9 +460,22 @@ impl Display for FuncType {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
+}
+
+impl FuncFParams {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let mut func_fparams_vec = Vec::new();
+        loop {
+            let func_fparam = FuncFParam::arbitrary(u, c)?;
+            func_fparams_vec.push(func_fparam);
+            if u.arbitrary()? {
+                return Ok(FuncFParams { func_fparams_vec });
+            }
+        }
+    }
 }
 
 impl Display for FuncFParams {
@@ -259,10 +492,35 @@ impl Display for FuncFParams {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum FuncFParam {
     NonArray((BType, Ident)),
     Array((BType, Ident, Vec<Exp>)),
+}
+
+impl FuncFParam {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => {
+                let btype = BType::arbitrary(u)?;
+                let ident = Ident::arbitrary(u)?;
+                Ok(FuncFParam::NonArray((btype, ident)))
+            }
+            1 => {
+                let btype = BType::arbitrary(u)?;
+                let ident = Ident::arbitrary(u)?;
+                let mut exp_vec = Vec::new();
+                loop {
+                    let exp = Exp::arbitrary(u, c)?;
+                    exp_vec.push(exp);
+                    if u.arbitrary()? {
+                        return Ok(FuncFParam::Array((btype, ident, exp_vec)));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for FuncFParam {
@@ -285,9 +543,22 @@ impl Display for FuncFParam {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub block_vec: Vec<BlockItem>,
+}
+
+impl Block {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let mut block_vec = Vec::new();
+        loop {
+            let block_item = BlockItem::arbitrary(u, c)?;
+            block_vec.push(block_item);
+            if u.arbitrary()? {
+                return Ok(Block { block_vec });
+            }
+        }
+    }
 }
 
 impl Display for Block {
@@ -304,10 +575,20 @@ impl Display for Block {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum BlockItem {
     Decl(Decl),
     Stmt(Stmt),
+}
+
+impl BlockItem {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(BlockItem::Decl(Decl::arbitrary(u, c)?)),
+            1 => Ok(BlockItem::Stmt(Stmt::arbitrary(u, c)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for BlockItem {
@@ -319,7 +600,7 @@ impl Display for BlockItem {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Assign(Assign),
     ExpStmt(ExpStmt),
@@ -329,6 +610,22 @@ pub enum Stmt {
     Break(Break),
     Continue(Continue),
     Return(Return),
+}
+
+impl Stmt {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 8 {
+            0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
+            1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
+            2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
+            3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
+            4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
+            5 => Ok(Stmt::Break(Break)),
+            6 => Ok(Stmt::Continue(Continue)),
+            7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for Stmt {
@@ -346,10 +643,18 @@ impl Display for Stmt {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Assign {
     pub lval: LVal,
     pub exp: Exp,
+}
+
+impl Assign {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let lval = LVal::arbitrary(u, c)?;
+        let exp = Exp::arbitrary(u, c)?;
+        Ok(Assign { lval, exp })
+    }
 }
 
 impl Display for Assign {
@@ -358,9 +663,20 @@ impl Display for Assign {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct ExpStmt {
     pub exp: Option<Exp>,
+}
+
+impl ExpStmt {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let exp = if u.arbitrary()? {
+            Some(Exp::arbitrary(u, c)?)
+        } else {
+            None
+        };
+        Ok(ExpStmt { exp })
+    }
 }
 
 impl Display for ExpStmt {
@@ -372,11 +688,28 @@ impl Display for ExpStmt {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct If {
     pub cond: Cond,
     pub then: Stmt,
     pub else_then: Option<Stmt>,
+}
+
+impl If {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let cond = Cond::arbitrary(u, c)?;
+        let then = Stmt::arbitrary(u, c)?;
+        let else_then = if u.arbitrary()? {
+            Some(Stmt::arbitrary(u, c)?)
+        } else {
+            None
+        };
+        Ok(If {
+            cond,
+            then,
+            else_then,
+        })
+    }
 }
 
 impl Display for If {
@@ -388,10 +721,18 @@ impl Display for If {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct While {
     pub cond: Cond,
     pub body: Stmt,
+}
+
+impl While {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let cond = Cond::arbitrary(u, c)?;
+        let body = Stmt::arbitrary(u, c)?;
+        Ok(While { cond, body })
+    }
 }
 
 impl Display for While {
@@ -400,7 +741,7 @@ impl Display for While {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Break;
 
 impl Display for Break {
@@ -409,7 +750,7 @@ impl Display for Break {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Continue;
 
 impl Display for Continue {
@@ -418,9 +759,21 @@ impl Display for Continue {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Return {
     pub exp: Option<Exp>,
+}
+
+impl Return {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let exp = if u.arbitrary()? {
+            Some(Exp::arbitrary(u, c)?)
+        } else {
+            None
+        };
+        Ok(Return { exp })
+    }
+
 }
 
 impl Display for Return {
@@ -432,9 +785,18 @@ impl Display for Return {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Exp {
     pub add_exp: Box<AddExp>,
+}
+
+impl Exp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let add_exp = AddExp::arbitrary(u, c)?;
+        Ok(Exp {
+            add_exp: Box::new(add_exp),
+        })
+    }
 }
 
 impl Display for Exp {
@@ -443,9 +805,16 @@ impl Display for Exp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct Cond {
     pub l_or_exp: LOrExp,
+}
+
+impl Cond {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let l_or_exp = LOrExp::arbitrary(u, c)?;
+        Ok(Cond { l_or_exp })
+    }
 }
 
 impl Display for Cond {
@@ -454,10 +823,24 @@ impl Display for Cond {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct LVal {
     pub id: Ident,
     pub exp_vec: Vec<Exp>,
+}
+
+impl LVal {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let id = Ident::arbitrary(u)?;
+        let mut exp_vec = Vec::new();
+        loop {
+            let exp = Exp::arbitrary(u, c)?;
+            exp_vec.push(exp);
+            if u.arbitrary()? {
+                return Ok(LVal { id, exp_vec });
+            }
+        }
+    }
 }
 
 impl Display for LVal {
@@ -475,11 +858,22 @@ impl Display for LVal {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum PrimaryExp {
     Exp(Box<Exp>),
     LVal(LVal),
     Number(Number),
+}
+
+impl PrimaryExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 3 {
+            0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c)?))),
+            1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c)?)),
+            2 => Ok(PrimaryExp::Number(Number::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for PrimaryExp {
@@ -492,10 +886,20 @@ impl Display for PrimaryExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum Number {
     IntConst(IntConst),
     FloatConst(FloatConst),
+}
+
+impl Number {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
+            1 => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for Number {
@@ -507,11 +911,34 @@ impl Display for Number {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum UnaryExp {
     PrimaryExp(Box<PrimaryExp>),
     FuncCall((Ident, Option<FuncRParams>)),
     OpUnary((UnaryOp, Box<UnaryExp>)),
+}
+
+impl UnaryExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 3 {
+            0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c)?))),
+            1 => {
+                let id = Ident::arbitrary(u)?;
+                let func_rparams = if u.arbitrary()? {
+                    Some(FuncRParams::arbitrary(u, c)?)
+                } else {
+                    None
+                };
+                Ok(UnaryExp::FuncCall((id, func_rparams)))
+            }
+            2 => {
+                let unary_op = UnaryOp::arbitrary(u)?;
+                let unary_exp = UnaryExp::arbitrary(u, c)?;
+                Ok(UnaryExp::OpUnary((unary_op, Box::new(unary_exp))))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for UnaryExp {
@@ -525,11 +952,22 @@ impl Display for UnaryExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Add,
     Minus,
     Exclamation,
+}
+
+impl UnaryOp {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 3 {
+            0 => Ok(UnaryOp::Add),
+            1 => Ok(UnaryOp::Minus),
+            2 => Ok(UnaryOp::Exclamation),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for UnaryOp {
@@ -542,9 +980,22 @@ impl Display for UnaryOp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct FuncRParams {
     pub exp_vec: Vec<Exp>,
+}
+
+impl FuncRParams {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let mut exp_vec = Vec::new();
+        loop {
+            let exp = Exp::arbitrary(u, c)?;
+            exp_vec.push(exp);
+            if u.arbitrary()? {
+                return Ok(FuncRParams { exp_vec });
+            }
+        }
+    }
 }
 
 impl Display for FuncRParams {
@@ -561,12 +1012,36 @@ impl Display for FuncRParams {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum MulExp {
     UnaryExp(Box<UnaryExp>),
     MulExp((Box<MulExp>, UnaryExp)),
     DivExp((Box<MulExp>, UnaryExp)),
     ModExp((Box<MulExp>, UnaryExp)),
+}
+
+impl MulExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 4 {
+            0 => Ok(MulExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, c)?))),
+            1 => {
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
+                Ok(MulExp::MulExp((Box::new(a), b)))
+            }
+            2 => {
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
+                Ok(MulExp::DivExp((Box::new(a), b)))
+            }
+            3 => {
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
+                Ok(MulExp::ModExp((Box::new(a), b)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for MulExp {
@@ -580,10 +1055,20 @@ impl Display for MulExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum AddOp {
     Add,
     Minus,
+}
+
+impl AddOp {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(AddOp::Add),
+            1 => Ok(AddOp::Minus),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for AddOp {
@@ -595,10 +1080,25 @@ impl Display for AddOp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum AddExp {
     MulExp(Box<MulExp>),
     OpExp((Box<AddExp>, AddOp, MulExp)),
+}
+
+impl AddExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, c)?))),
+            1 => {
+                let a = AddExp::arbitrary(u, c)?;
+                let b = AddOp::arbitrary(u)?;
+                let c = MulExp::arbitrary(u, c)?;
+                Ok(AddExp::OpExp((Box::new(a), b, c)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for AddExp {
@@ -610,12 +1110,24 @@ impl Display for AddExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum RelOp {
     Less,
     LessOrEqual,
     Greater,
     GreaterOrEqual,
+}
+
+impl RelOp {
+    fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 4 {
+            0 => Ok(RelOp::Less),
+            1 => Ok(RelOp::LessOrEqual),
+            2 => Ok(RelOp::Greater),
+            3 => Ok(RelOp::GreaterOrEqual),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for RelOp {
@@ -629,10 +1141,25 @@ impl Display for RelOp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum RelExp {
     AddExp(AddExp),
     OpExp((Box<RelExp>, RelOp, AddExp)),
+}
+
+impl RelExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(RelExp::AddExp(AddExp::arbitrary(u, c)?)),
+            1 => {
+                let a = RelExp::arbitrary(u, c)?;
+                let b = RelOp::arbitrary(u)?;
+                let c = AddExp::arbitrary(u, c)?;
+                Ok(RelExp::OpExp((Box::new(a), b, c)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for RelExp {
@@ -644,11 +1171,30 @@ impl Display for RelExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum EqExp {
     RelExp(RelExp),
     EqualExp((Box<EqExp>, RelExp)),
     NotEqualExp((Box<EqExp>, RelExp)),
+}
+
+impl EqExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 3 {
+            0 => Ok(EqExp::RelExp(RelExp::arbitrary(u, c)?)),
+            1 => {
+                let a = EqExp::arbitrary(u, c)?;
+                let b = RelExp::arbitrary(u, c)?;
+                Ok(EqExp::EqualExp((Box::new(a), b)))
+            }
+            2 => {
+                let a = EqExp::arbitrary(u, c)?;
+                let b = RelExp::arbitrary(u, c)?;
+                Ok(EqExp::NotEqualExp((Box::new(a), b)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for EqExp {
@@ -661,10 +1207,24 @@ impl Display for EqExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum LAndExp {
     EqExp(EqExp),
     AndExp((Box<LAndExp>, EqExp)),
+}
+
+impl LAndExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(LAndExp::EqExp(EqExp::arbitrary(u, c)?)),
+            1 => {
+                let a = LAndExp::arbitrary(u, c)?;
+                let b = EqExp::arbitrary(u, c)?;
+                Ok(LAndExp::AndExp((Box::new(a), b)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for LAndExp {
@@ -676,9 +1236,16 @@ impl Display for LAndExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub struct ConstExp {
     pub add_exp: AddExp,
+}
+
+impl ConstExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let add_exp = AddExp::arbitrary(u, c)?;
+        Ok(ConstExp { add_exp })
+    }
 }
 
 impl Display for ConstExp {
@@ -687,10 +1254,24 @@ impl Display for ConstExp {
     }
 }
 
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone)]
 pub enum LOrExp {
     LAndExp(LAndExp),
     OrExp((Box<LOrExp>, LAndExp)),
+}
+
+impl LOrExp {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match u.arbitrary::<u8>()? % 2 {
+            0 => Ok(LOrExp::LAndExp(LAndExp::arbitrary(u, c)?)),
+            1 => {
+                let a = LOrExp::arbitrary(u, c)?;
+                let b = LAndExp::arbitrary(u, c)?;
+                Ok(LOrExp::OrExp((Box::new(a), b)))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for LOrExp {
@@ -703,7 +1284,7 @@ impl Display for LOrExp {
 }
 
 /// Positive vector, element count >= 1
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PVec<T>(Vec<T>);
 
 impl<T> PVec<T> {
@@ -725,7 +1306,7 @@ where
 }
 
 /// Identifier, character is limited
-#[derive(Debug, Arbitrary)]
+#[derive(Debug, Clone, Arbitrary)]
 pub struct Ident(PVec<IdentChar>);
 
 impl Display for Ident {
@@ -737,7 +1318,7 @@ impl Display for Ident {
 
 /// Character that can appear in an identifier
 /// TODO: add support for number
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentChar(u8);
 
 impl<'a> Arbitrary<'a> for IdentChar {
