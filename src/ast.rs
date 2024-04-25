@@ -154,6 +154,12 @@ pub struct Context {
     pub ctx: HashMap<String, Type>,
     pub env: HashMap<String, Value>,
     pub return_type: Type,
+
+    /// Expected type for the next expression
+    pub expected_type: Type,
+
+    /// Flag if expected type is a constant
+    pub expected_const: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -164,11 +170,17 @@ pub struct CompUnit {
 impl<'a> Arbitrary<'a> for CompUnit {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let mut global_items = Vec::new();
+
+        // Initialize with empty context
         let mut c = Context {
             ctx: HashMap::new(),
             env: HashMap::new(),
             return_type: Type::Void,
+            expected_type: Type::Void,
+            expected_const: false,
         };
+
+        // Generate at least one global item
         loop {
             let item = GlobalItems::arbitrary(u, &mut c)?;
             global_items.push(item);
@@ -201,6 +213,7 @@ pub enum GlobalItems {
 
 impl GlobalItems {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Generate variable or function at random
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(GlobalItems::Decl(Decl::arbitrary(u, c)?)),
             1 => Ok(GlobalItems::FuncDef(FuncDef::arbitrary(u, c)?)),
@@ -220,44 +233,42 @@ impl Display for GlobalItems {
 
 #[derive(Debug, Clone)]
 pub enum Decl {
-    ConstDecl(ConstDecl),
     VarDecl(VarDecl),
 }
 
 impl Decl {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(Decl::ConstDecl(ConstDecl::arbitrary(u, c)?)),
-            1 => Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?)),
-            _ => unreachable!(),
-        }
+        Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?))
     }
 }
 
 impl Display for Decl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Decl::ConstDecl(a) => write!(f, "{}", a),
             Decl::VarDecl(a) => write!(f, "{}", a),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ConstDecl {
+pub struct VarDecl {
     pub btype: BType,
-    pub const_def_vec: PVec<ConstDef>,
+    pub const_def_vec: PVec<VarDef>,
 }
 
-impl ConstDecl {
+impl VarDecl {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Generate a random basic type
         let btype = BType::arbitrary(u)?;
+
+        // Generate at lease one definition
         let mut const_def_vec = Vec::new();
         loop {
-            let const_def = ConstDef::arbitrary(u, c, btype.clone().into())?;
+            let is_const = u.arbitrary()?;
+            let const_def = VarDef::arbitrary(u, c, btype.clone().into(), is_const)?;
             const_def_vec.push(const_def);
             if u.arbitrary()? {
-                return Ok(ConstDecl {
+                return Ok(VarDecl {
                     btype,
                     const_def_vec: PVec(const_def_vec),
                 });
@@ -266,7 +277,7 @@ impl ConstDecl {
     }
 }
 
-impl Display for ConstDecl {
+impl Display for VarDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -289,6 +300,7 @@ pub enum BType {
 
 impl BType {
     fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+        // Generate a random basic type
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(BType::Int),
             1 => Ok(BType::Float),
@@ -307,82 +319,141 @@ impl Display for BType {
 }
 
 #[derive(Debug, Clone)]
-pub struct ConstDef {
-    pub ident: Ident,
-    pub const_exp_vec: Vec<ConstExp>,
-    pub const_init_val: ConstInitVal,
-}
+pub struct Index(Vec<Exp>);
 
-impl ConstDef {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, t: Type) -> Result<Self> {
-        let ident = Ident::arbitrary(u)?;
-        let mut def_index = Vec::new();
-        let mut def_type = t;
+impl Index {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let mut index = Vec::new();
         loop {
-            let index = ConstExp::arbitrary(u, c, Type::Int)?;
-            let Value::Int(i) = index.eval(c) else {
+            // Create zero or more array indicies
+            if u.arbitrary()? {
+                return Ok(Index(index));
+            }
+
+            // Create a const integer as the next array index
+            c.expected_type = Type::Int;
+            c.expected_const = true;
+            let exp = Exp::arbitrary(u, c)?;
+            index.push(exp);
+        }
+    }
+
+    fn apply(&self, mut base_type: Type, c: &mut Context) -> Type {
+        // Apply the array index to the base type
+        // Reverse order: int x[2][8] -> [[int x 8] x 2]
+        for exp in self.0.iter().rev() {
+            let Value::Int(i) = exp.eval(c) else {
                 panic!("Const expression as index of array must be an integer")
             };
-            def_type = Type::Array(def_type.into(), i);
-            def_index.push(index);
-            if u.arbitrary()? {
-                break;
-            }
+            base_type = Type::Array(base_type.into(), i);
         }
-        c.ctx.insert(ident.to_string(), def_type.clone());
-        let const_init_val = ConstInitVal::arbitrary(u, c, def_type)?;
-        Ok(ConstDef {
-            ident,
-            const_exp_vec: def_index,
-            const_init_val,
-        })
+        base_type
     }
 }
 
-impl Display for ConstDef {
+impl Display for Index {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}{} = {}",
-            self.ident,
-            self.const_exp_vec
+            "{}",
+            self.0
                 .iter()
                 .map(|x| format!("[{}]", x))
                 .collect::<Vec<String>>()
-                .join(""),
-            self.const_init_val,
+                .join("")
         )
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ConstInitVal {
-    ConstExp(ConstExp),
-    ConstInitValVec(Vec<ConstInitVal>),
+pub struct VarDef {
+    pub ident: Ident,
+    pub index: Index,
+    pub init_val: VarInitVal,
 }
 
-impl ConstInitVal {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
-        match expected {
-            Type::Int | Type::Float => Ok(ConstInitVal::ConstExp(ConstExp::arbitrary(u, c, expected)?)),
+impl VarDef {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context, base_type: Type, is_const: bool) -> Result<Self> {
+        // Generate a random identifier for this definition
+        let ident = Ident::arbitrary(u)?;
+
+        // Generate random array type
+        let index = Index::arbitrary(u, c)?;
+        let var_type = index.apply(base_type, c);
+
+        // Generate assigned value
+        c.expected_type = var_type.clone();
+        c.expected_const = is_const;
+        let init_val = VarInitVal::arbitrary(u, c)?;
+
+        // Add variable to context (also env if constant)
+        c.ctx.insert(ident.to_string(), var_type.clone());
+        if is_const {
+            let value = init_val.eval(c);
+            c.env.insert(ident.to_string(), value);
+        }
+
+        // Return the variable definition
+        Ok(VarDef {
+            ident,
+            index,
+            init_val,
+        })
+    }
+}
+
+impl Display for VarDef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} = {}",
+            self.ident,
+            self.index,
+            self.init_val,
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VarInitVal {
+    Exp(Exp),
+    InitValVec(Vec<VarInitVal>),
+}
+
+impl VarInitVal {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match c.expected_type.clone() {
+            Type::Int | Type::Float => {
+                // Random integer or float
+                Ok(VarInitVal::Exp(Exp::arbitrary(u, c)?))
+            }
             Type::Array(content_type, content_len) => {
+                // Fill array with random contents
                 let mut init_val_vec = Vec::new();
                 for _ in 0..content_len {
-                    let init_val = ConstInitVal::arbitrary(u, c, *content_type.clone())?;
+                    c.expected_type = *content_type.clone();
+                    let init_val = VarInitVal::arbitrary(u, c)?;
                     init_val_vec.push(init_val);
                 }
-                Ok(ConstInitVal::ConstInitValVec(init_val_vec))
+                Ok(VarInitVal::InitValVec(init_val_vec))
             }
             _ => panic!("Invalid type"),
         }
     }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        match self {
+            VarInitVal::Exp(a) => a.eval(ctx),
+            VarInitVal::InitValVec(a) => Value::Array(a.iter().map(|x| x.eval(ctx)).collect()),
+        }
+    }
 }
 
-impl Display for ConstInitVal {
+impl Display for VarInitVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConstInitVal::ConstExp(a) => write!(f, "{}", a),
-            ConstInitVal::ConstInitValVec(a) => write!(
+            VarInitVal::Exp(a) => write!(f, "{}", a),
+            VarInitVal::InitValVec(a) => write!(
                 f,
                 "{{ {} }}",
                 a.iter()
@@ -395,190 +466,27 @@ impl Display for ConstInitVal {
 }
 
 #[derive(Debug, Clone)]
-pub struct VarDecl {
-    pub btype: BType,
-    pub var_def_vec: PVec<VarDef>,
-}
-
-impl VarDecl {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        let btype = BType::arbitrary(u)?;
-        let mut var_def_vec = Vec::new();
-        loop {
-            let var_def = VarDef::arbitrary(u, c, btype.clone().into())?;
-            var_def_vec.push(var_def);
-            if u.arbitrary()? {
-                return Ok(VarDecl {
-                    btype,
-                    var_def_vec: PVec(var_def_vec),
-                });
-            }
-        }
-    }
-}
-
-impl Display for VarDecl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {};",
-            self.btype,
-            self.var_def_vec
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum VarDef {
-    Array((Ident, Vec<ConstExp>)),
-    ArrayInit((Ident, Vec<ConstExp>, InitVal)),
-}
-
-impl VarDef {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, t: Type) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => {
-                let ident = Ident::arbitrary(u)?;
-                let mut def_index = Vec::new();
-                let mut def_type = t;
-                loop {
-                    let index = ConstExp::arbitrary(u, c, Type::Int)?;
-                    let Value::Int(i) = index.eval(c) else {
-                        panic!("Const expression as index of array must be an integer")
-                    };
-                    def_type = Type::Array(Box::new(def_type), i);
-                    def_index.push(index);
-                    if u.arbitrary()? {
-                        break;
-                    }
-                }
-                c.ctx.insert(ident.to_string(), def_type.clone());
-                Ok(VarDef::Array((ident, def_index)))
-            }
-            1 => {
-                let ident = Ident::arbitrary(u)?;
-                let mut def_index = Vec::new();
-                let mut def_type = t;
-                loop {
-                    let index = ConstExp::arbitrary(u, c, Type::Int)?;
-                    let Value::Int(i) = index.eval(c) else {
-                        panic!("Const expression as index of array must be an integer")
-                    };
-                    def_type = Type::Array(Box::new(def_type), i);
-                    def_index.push(index);
-                    if u.arbitrary()? {
-                        break;
-                    }
-                }
-                c.ctx.insert(ident.to_string(), def_type.clone());
-                let init_val = InitVal::arbitrary(u, c, def_type)?;
-                Ok(VarDef::ArrayInit((ident, def_index, init_val)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for VarDef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VarDef::Array((a, b)) => write!(
-                f,
-                "{}{}",
-                a,
-                b.iter()
-                    .map(|x| format!("[{}]", x))
-                    .collect::<Vec<String>>()
-                    .join("")
-            ),
-            VarDef::ArrayInit((a, b, c)) => write!(
-                f,
-                "{}{} = {}",
-                a,
-                b.iter()
-                    .map(|x| format!("[{}]", x))
-                    .collect::<Vec<String>>()
-                    .join(""),
-                c,
-            ),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InitVal {
-    Exp(Exp),
-    InitValVec(Vec<InitVal>),
-}
-
-impl InitVal {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
-        match expected {
-            Type::Int | Type::Float => Ok(InitVal::Exp(Exp::arbitrary(u, c, expected)?)),
-            Type::Array(content_type, content_len) => {
-                let mut init_val_vec = Vec::new();
-                for _ in 0..content_len {
-                    let init_val = InitVal::arbitrary(u, c, *content_type.clone())?;
-                    init_val_vec.push(init_val);
-                }
-                Ok(InitVal::InitValVec(init_val_vec))
-            }
-            _ => panic!("Invalid type"),
-        }
-    }
-}
-
-impl Display for InitVal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InitVal::Exp(e) => write!(f, "{}", e),
-            InitVal::InitValVec(e) => write!(
-                f,
-                "{{ {} }}",
-                e.iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum FuncDef {
-    NonParameterFuncDef((FuncType, Ident, Block)),
     ParameterFuncDef((FuncType, Ident, FuncFParams, Block)),
 }
 
 impl FuncDef {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => {
-                let func_type = FuncType::arbitrary(u)?;
-                let ident = Ident::arbitrary(u)?;
-                let block = Block::arbitrary(u, c)?;
-                Ok(FuncDef::NonParameterFuncDef((func_type, ident, block)))
-            }
-            1 => {
-                let func_type = FuncType::arbitrary(u)?;
-                let ident = Ident::arbitrary(u)?;
-                let func_fparams = FuncFParams::arbitrary(u, c)?;
-                let block = Block::arbitrary(u, c)?;
-                Ok(FuncDef::ParameterFuncDef((func_type, ident, func_fparams, block)))
-            }
-            _ => unreachable!(),
-        }
+        // Generate a random function signature
+        let func_type = FuncType::arbitrary(u)?;
+        let ident = Ident::arbitrary(u)?;
+        let func_fparams = FuncFParams::arbitrary(u, c)?;
+
+        // Generate function statements with return type specified
+        c.return_type = func_type.clone().into();
+        let block = Block::arbitrary(u, c)?;
+        Ok(FuncDef::ParameterFuncDef((func_type, ident, func_fparams, block)))
     }
 }
 
 impl Display for FuncDef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FuncDef::NonParameterFuncDef((a, b, c)) => write!(f, "{} {}() {}", a, b, c),
             FuncDef::ParameterFuncDef((a, b, c, d)) => write!(f, "{} {}({}) {}", a, b, c, d),
         }
     }
@@ -621,11 +529,12 @@ impl FuncFParams {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         let mut func_fparams_vec = Vec::new();
         loop {
-            let func_fparam = FuncFParam::arbitrary(u, c)?;
-            func_fparams_vec.push(func_fparam);
+            // Generate zero or more function params
             if u.arbitrary()? {
                 return Ok(FuncFParams { func_fparams_vec });
             }
+            let func_fparam = FuncFParam::arbitrary(u, c)?;
+            func_fparams_vec.push(func_fparam);
         }
     }
 }
@@ -647,28 +556,34 @@ impl Display for FuncFParams {
 #[derive(Debug, Clone)]
 pub enum FuncFParam {
     NonArray((BType, Ident)),
-    Array((BType, Ident, Vec<Exp>)),
+    Array((BType, Ident, Index)),
 }
 
 impl FuncFParam {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Generate array (x: int[][4]) or non-array (x: int) function parameter
         match u.arbitrary::<u8>()? % 2 {
             0 => {
+                // Generate signature
                 let btype = BType::arbitrary(u)?;
                 let ident = Ident::arbitrary(u)?;
+
+                // Add to context
+                c.ctx.insert(ident.to_string(), btype.clone().into());
                 Ok(FuncFParam::NonArray((btype, ident)))
             }
             1 => {
+                // Generate signature
                 let btype = BType::arbitrary(u)?;
                 let ident = Ident::arbitrary(u)?;
-                let mut exp_vec = Vec::new();
-                loop {
-                    let exp = Exp::arbitrary(u, c, btype.clone().into())?;
-                    exp_vec.push(exp);
-                    if u.arbitrary()? {
-                        return Ok(FuncFParam::Array((btype, ident, exp_vec)));
-                    }
-                }
+
+                // Generate random array type
+                let var_index = Index::arbitrary(u, c)?;
+                let var_type = var_index.apply(btype.clone().into(), c);
+
+                // Add to context
+                c.ctx.insert(ident.to_string(), var_type.clone());
+                Ok(FuncFParam::Array((btype, ident, var_index)))
             }
             _ => unreachable!(),
         }
@@ -679,18 +594,7 @@ impl Display for FuncFParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FuncFParam::NonArray((a, b)) => write!(f, "{} {}", a, b),
-            FuncFParam::Array((a, b, c)) => {
-                write!(
-                    f,
-                    "{} {}[]{}",
-                    a,
-                    b,
-                    c.iter()
-                        .map(|x| format!("[{}]", x))
-                        .collect::<Vec<_>>()
-                        .join("")
-                )
-            }
+            FuncFParam::Array((a, b, c)) => write!(f, "{} {}[]{}", a, b, c),
         }
     }
 }
@@ -703,13 +607,20 @@ pub struct Block {
 impl Block {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         let mut block_vec = Vec::new();
+
+        // Generate zero or more predecessing block items
         loop {
+            if u.arbitrary()? {
+                break;
+            }
             let block_item = BlockItem::arbitrary(u, c)?;
             block_vec.push(block_item);
-            if u.arbitrary()? {
-                return Ok(Block { block_vec });
-            }
         }
+
+        // Generate a return statement
+        let return_stmt = Stmt::Return(Return::arbitrary(u, c)?);
+        block_vec.push(BlockItem::Stmt(return_stmt));
+        Ok(Block { block_vec })
     }
 }
 
@@ -735,6 +646,7 @@ pub enum BlockItem {
 
 impl BlockItem {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Generate declaration or statement at random
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(BlockItem::Decl(Decl::arbitrary(u, c)?)),
             1 => Ok(BlockItem::Stmt(Stmt::arbitrary(u, c)?)),
@@ -766,6 +678,8 @@ pub enum Stmt {
 
 impl Stmt {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Generate a random statement
+        // TODO prevent generating break or continue if not in a loop
         match u.arbitrary::<u8>()? % 8 {
             0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
             1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
@@ -803,8 +717,14 @@ pub struct Assign {
 
 impl Assign {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        // Randomly find a variable in context
+        // TODO ensure such variable exists
         let (lval, ty) = LVal::arbitrary_infer(u, c)?;
-        let exp = Exp::arbitrary(u, c, ty)?;
+
+        // Generate a expression of matching type
+        // Can be generated because `c = c` is possible
+        c.expected_type = ty;
+        let exp = Exp::arbitrary(u, c)?;
         Ok(Assign { lval, exp })
     }
 }
@@ -823,9 +743,15 @@ pub struct ExpStmt {
 impl ExpStmt {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
-            // TODO make more type possible here
-            Some(Exp::arbitrary(u, c, Type::Void)?)
+            // Generate a random type for this expression
+            let func_type = FuncType::arbitrary(u)?;
+
+            // Generate a random statement of this type (non-constant)
+            c.expected_type = func_type.clone().into();
+            c.expected_const = false;
+            Some(Exp::arbitrary(u, c)?)
         } else {
+            // Possible to generate a stray semicolon
             None
         };
         Ok(ExpStmt { exp })
@@ -920,7 +846,8 @@ pub struct Return {
 impl Return {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
-            Some(Exp::arbitrary(u, c, c.return_type.clone())?)
+            c.expected_type = c.return_type.clone();
+            Some(Exp::arbitrary(u, c)?)
         } else {
             None
         };
@@ -944,8 +871,8 @@ pub struct Exp {
 }
 
 impl Exp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
-        let add_exp = AddExp::arbitrary(u, c, expected)?;
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        let add_exp = AddExp::arbitrary(u, c)?;
         Ok(Exp {
             add_exp: Box::new(add_exp),
         })
@@ -987,7 +914,7 @@ pub struct LVal {
 }
 
 impl LVal {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         // TODO make arbitrary identifier type match
         let id = Ident::arbitrary(u)?;
         let exp_vec = Vec::new();
@@ -1048,11 +975,11 @@ pub enum PrimaryExp {
 }
 
 impl PrimaryExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
-            0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c, expected)?))),
-            1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c, expected)?)),
-            2 => Ok(PrimaryExp::Number(Number::arbitrary(u, expected)?)),
+            0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c)?))),
+            1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c)?)),
+            2 => Ok(PrimaryExp::Number(Number::arbitrary(u, c)?)),
             _ => unreachable!(),
         }
     }
@@ -1083,8 +1010,8 @@ pub enum Number {
 }
 
 impl Number {
-    fn arbitrary(u: &mut Unstructured, expected: Type) -> Result<Self> {
-        match expected {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+        match c.expected_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             Type::Float => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
             _ => panic!("Invalid type for a number literal"),
@@ -1116,9 +1043,9 @@ pub enum UnaryExp {
 }
 
 impl UnaryExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
-            0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c, expected)?))),
+            0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c)?))),
             1 => {
                 // TODO make sure function type match
                 let id = Ident::arbitrary(u)?;
@@ -1131,7 +1058,7 @@ impl UnaryExp {
             }
             2 => {
                 let unary_op = UnaryOp::arbitrary(u)?;
-                let unary_exp = UnaryExp::arbitrary(u, c, expected)?;
+                let unary_exp = UnaryExp::arbitrary(u, c)?;
                 Ok(UnaryExp::OpUnary((unary_op, Box::new(unary_exp))))
             }
             _ => unreachable!(),
@@ -1209,7 +1136,7 @@ impl FuncRParams {
         let mut exp_vec = Vec::new();
         loop {
             // TODO make param type match
-            let exp = Exp::arbitrary(u, c, Type::Int)?;
+            let exp = Exp::arbitrary(u, c)?;
             exp_vec.push(exp);
             if u.arbitrary()? {
                 return Ok(FuncRParams { exp_vec });
@@ -1241,22 +1168,22 @@ pub enum MulExp {
 }
 
 impl MulExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 4 {
-            0 => Ok(MulExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, c, expected)?))),
+            0 => Ok(MulExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, c)?))),
             1 => {
-                let a = MulExp::arbitrary(u, c, expected.clone())?;
-                let b = UnaryExp::arbitrary(u, c, expected)?;
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
                 Ok(MulExp::MulExp((Box::new(a), b)))
             }
             2 => {
-                let a = MulExp::arbitrary(u, c, expected.clone())?;
-                let b = UnaryExp::arbitrary(u, c, expected)?;
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
                 Ok(MulExp::DivExp((Box::new(a), b)))
             }
             3 => {
-                let a = MulExp::arbitrary(u, c, expected.clone())?;
-                let b = UnaryExp::arbitrary(u, c, expected)?;
+                let a = MulExp::arbitrary(u, c)?;
+                let b = UnaryExp::arbitrary(u, c)?;
                 Ok(MulExp::ModExp((Box::new(a), b)))
             }
             _ => unreachable!(),
@@ -1328,13 +1255,13 @@ pub enum AddExp {
 }
 
 impl AddExp {
-    fn arbitrary(u: &mut Unstructured, ctx: &mut Context, expected: Type) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, ctx: &mut Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, ctx, expected)?))),
+            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, ctx)?))),
             1 => {
-                let a = AddExp::arbitrary(u, ctx, expected.clone())?;
+                let a = AddExp::arbitrary(u, ctx)?;
                 let b = AddOp::arbitrary(u)?;
-                let c = MulExp::arbitrary(u, ctx, expected)?;
+                let c = MulExp::arbitrary(u, ctx)?;
                 Ok(AddExp::OpExp((Box::new(a), b, c)))
             }
             _ => unreachable!(),
@@ -1488,28 +1415,6 @@ impl Display for LAndExp {
             Self::EqExp(a) => write!(f, "{}", a),
             Self::AndExp((a, b)) => write!(f, "({}) && ({})", a, b),
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstExp {
-    pub add_exp: AddExp,
-}
-
-impl ConstExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, expected: Type) -> Result<Self> {
-        let add_exp = AddExp::arbitrary(u, c, expected)?;
-        Ok(ConstExp { add_exp })
-    }
-
-    fn eval(&self, c: &Context) -> Value {
-        self.add_exp.eval(c)
-    }
-}
-
-impl Display for ConstExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.add_exp)
     }
 }
 
