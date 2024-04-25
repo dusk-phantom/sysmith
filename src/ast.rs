@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 
@@ -11,13 +12,147 @@ pub enum Type {
     Float,
     Void,
     Func(Box<Type>, Vec<Type>),
-    Array(Box<Type>, Vec<Option<usize>>),
+    Array(Box<Type>, i32),
+    Pointer(Box<Type>),
+}
+
+impl From<BType> for Type {
+    fn from(btype: BType) -> Self {
+        match btype {
+            BType::Int => Type::Int,
+            BType::Float => Type::Float,
+        }
+    }
+}
+
+impl From<FuncType> for Type {
+    fn from(func_type: FuncType) -> Self {
+        match func_type {
+            FuncType::Int => Type::Int,
+            FuncType::Float => Type::Float,
+            FuncType::Void => Type::Void,
+        }
+    }
+}
+
+/// All possible values
+#[derive(Debug, Clone)]
+pub enum Value {
+    Int(i32),
+    Float(f32),
+    Array(Vec<Value>),
+}
+
+impl std::ops::Neg for Value {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Value::Int(a) => Value::Int(-a),
+            Value::Float(a) => Value::Float(-a),
+            Value::Array(_) => panic!("Cannot negate an array"),
+        }
+    }
+}
+
+impl std::ops::Add for Value {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+            (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
+            (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 + b),
+            (Value::Float(a), Value::Int(b)) => Value::Float(a + b as f32),
+            _ => panic!("Cannot add an array"),
+        }
+    }
+}
+
+impl std::ops::Sub for Value {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
+            (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
+            (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 - b),
+            (Value::Float(a), Value::Int(b)) => Value::Float(a - b as f32),
+            _ => panic!("Cannot subtract an array"),
+        }
+    }
+}
+
+impl std::ops::Mul for Value {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
+            (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
+            (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 * b),
+            (Value::Float(a), Value::Int(b)) => Value::Float(a * b as f32),
+            _ => panic!("Cannot multiply an array"),
+        }
+    }
+}
+
+impl std::ops::Div for Value {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a / b),
+            (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
+            (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 / b),
+            (Value::Float(a), Value::Int(b)) => Value::Float(a / b as f32),
+            _ => panic!("Cannot divide an array"),
+        }
+    }
+}
+
+impl std::ops::Rem for Value {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
+            (Value::Float(a), Value::Float(b)) => Value::Float(a % b),
+            (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 % b),
+            (Value::Float(a), Value::Int(b)) => Value::Float(a % b as f32),
+            _ => panic!("Cannot modulo an array"),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Int(a), Value::Float(b)) => *a as f32 == *b,
+            (Value::Float(a), Value::Int(b)) => *a == *b as f32,
+            _ => panic!("Cannot compare an array"),
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => a.partial_cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+            (Value::Int(a), Value::Float(b)) => (*a as f32).partial_cmp(b),
+            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f32)),
+            _ => panic!("Cannot compare an array"),
+        }
+    } 
 }
 
 /// Current type context
 pub struct Context {
     pub ctx: HashMap<String, Type>,
-    pub env: HashMap<String, usize>,
+    pub env: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +252,7 @@ impl ConstDecl {
         let btype = BType::arbitrary(u)?;
         let mut const_def_vec = Vec::new();
         loop {
-            let const_def = ConstDef::arbitrary(u, c)?;
+            let const_def = ConstDef::arbitrary(u, c, btype.clone().into())?;
             const_def_vec.push(const_def);
             if u.arbitrary()? {
                 return Ok(ConstDecl {
@@ -177,16 +312,22 @@ pub struct ConstDef {
 }
 
 impl ConstDef {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &mut Context, t: Type) -> Result<Self> {
         let ident = Ident::arbitrary(u)?;
         let mut const_exp_vec = Vec::new();
+        let mut real_type = t;
         loop {
             let const_exp = ConstExp::arbitrary(u, c)?;
+            let Value::Int(i) = const_exp.eval(c) else {
+                panic!("Const expression as index of array must be an integer")
+            };
+            real_type = Type::Array(real_type.into(), i);
             const_exp_vec.push(const_exp);
             if u.arbitrary()? {
                 break;
             }
         }
+        c.ctx.insert(ident.to_string(), real_type);
         let const_init_val = ConstInitVal::arbitrary(u, c)?;
         Ok(ConstDef {
             ident,
@@ -797,6 +938,10 @@ impl Exp {
             add_exp: Box::new(add_exp),
         })
     }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        self.add_exp.eval(ctx)
+    }
 }
 
 impl Display for Exp {
@@ -841,6 +986,29 @@ impl LVal {
             }
         }
     }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        let mut array_type = ctx.ctx.get(&self.id.to_string()).unwrap().clone();
+        let mut array_value = ctx.env.get(&self.id.to_string()).unwrap().clone();
+        for exp in &self.exp_vec {
+            let index_value: Value = exp.eval(ctx);
+            match (array_type, array_value) {
+                (Type::Array(content_type, content_len), Value::Array(content_value)) => {
+                    if let Value::Int(i) = index_value {
+                        if i < 0 || i >= content_len {
+                            panic!("Index out of range")
+                        }
+                        array_type = *content_type;
+                        array_value = content_value[i as usize].clone();
+                    } else {
+                        panic!("Index must be an integer")
+                    }
+                }
+                _ => panic!("Not an array"),
+            }
+        }
+        array_value
+    }
 }
 
 impl Display for LVal {
@@ -874,6 +1042,14 @@ impl PrimaryExp {
             _ => unreachable!(),
         }
     }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        match self {
+            PrimaryExp::Exp(a) => a.eval(ctx),
+            PrimaryExp::LVal(a) => a.eval(ctx),
+            PrimaryExp::Number(a) => a.eval(ctx),
+        }
+    }
 }
 
 impl Display for PrimaryExp {
@@ -898,6 +1074,13 @@ impl Number {
             0 => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             1 => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
             _ => unreachable!(),
+        }
+    }
+
+    fn eval(&self, _: &Context) -> Value {
+        match self {
+            Number::IntConst(a) => Value::Int(*a),
+            Number::FloatConst(a) => Value::Float(*a),
         }
     }
 }
@@ -937,6 +1120,27 @@ impl UnaryExp {
                 Ok(UnaryExp::OpUnary((unary_op, Box::new(unary_exp))))
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        match self {
+            UnaryExp::PrimaryExp(a) => a.eval(ctx),
+            UnaryExp::FuncCall((_, _)) => {
+                panic!("No function is constant")
+            }
+            UnaryExp::OpUnary((op, exp)) => {
+                let exp = exp.eval(ctx);
+                match op {
+                    UnaryOp::Add => exp,
+                    UnaryOp::Minus => -exp,
+                    UnaryOp::Exclamation => if exp == Value::Int(0) {
+                        Value::Int(1)
+                    } else {
+                        Value::Int(0)
+                    },
+                }
+            }
         }
     }
 }
@@ -1042,6 +1246,27 @@ impl MulExp {
             _ => unreachable!(),
         }
     }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        match self {
+            Self::MulExp((a, b)) => {
+                let a = a.eval(ctx);
+                let b = b.eval(ctx);
+                a * b
+            }
+            Self::DivExp((a, b)) => {
+                let a = a.eval(ctx);
+                let b = b.eval(ctx);
+                a / b
+            }
+            Self::ModExp((a, b)) => {
+                let a = a.eval(ctx);
+                let b = b.eval(ctx);
+                a % b
+            }
+            Self::UnaryExp(a) => a.eval(ctx),
+        }
+    }
 }
 
 impl Display for MulExp {
@@ -1087,16 +1312,30 @@ pub enum AddExp {
 }
 
 impl AddExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, ctx: &mut Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, c)?))),
+            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, ctx)?))),
             1 => {
-                let a = AddExp::arbitrary(u, c)?;
+                let a = AddExp::arbitrary(u, ctx)?;
                 let b = AddOp::arbitrary(u)?;
-                let c = MulExp::arbitrary(u, c)?;
+                let c = MulExp::arbitrary(u, ctx)?;
                 Ok(AddExp::OpExp((Box::new(a), b, c)))
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn eval(&self, ctx: &Context) -> Value {
+        match self {
+            Self::MulExp(a) => a.eval(ctx),
+            Self::OpExp((a, b, c)) => {
+                let a = a.eval(ctx);
+                let c = c.eval(ctx);
+                match b {
+                    AddOp::Add => a + c,
+                    AddOp::Minus => a - c,
+                }
+            }
         }
     }
 }
@@ -1245,6 +1484,10 @@ impl ConstExp {
     fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
         let add_exp = AddExp::arbitrary(u, c)?;
         Ok(ConstExp { add_exp })
+    }
+
+    fn eval(&self, c: &Context) -> Value {
+        self.add_exp.eval(c)
     }
 }
 
