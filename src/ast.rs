@@ -150,16 +150,25 @@ impl PartialOrd for Value {
 }
 
 /// Current type context
+#[derive(Debug, Clone)]
 pub struct Context {
+    /// Mapping of variable names to their types
     pub ctx: HashMap<String, Type>,
-    pub env: HashMap<String, Value>,
-    pub return_type: Type,
 
-    /// Expected type for the next expression
+    /// Mapping of variable names to their values
+    pub env: HashMap<String, Value>,
+
+    /// Expected type for the current expression
     pub expected_type: Type,
 
     /// Flag if expected type is a constant
     pub expected_const: bool,
+
+    /// Expected return type for the current function
+    pub return_type: Type,
+
+    /// Flag if the current context is in a loop
+    pub in_loop: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -172,17 +181,18 @@ impl<'a> Arbitrary<'a> for CompUnit {
         let mut global_items = Vec::new();
 
         // Initialize with empty context
-        let mut c = Context {
+        let c = Context {
             ctx: HashMap::new(),
             env: HashMap::new(),
-            return_type: Type::Void,
             expected_type: Type::Void,
             expected_const: false,
+            return_type: Type::Void,
+            in_loop: false,
         };
 
         // Generate at least one global item
         loop {
-            let item = GlobalItems::arbitrary(u, &mut c)?;
+            let item = GlobalItems::arbitrary(u, &c)?;
             global_items.push(item);
             if u.arbitrary()? {
                 return Ok(CompUnit { global_items });
@@ -212,7 +222,7 @@ pub enum GlobalItems {
 }
 
 impl GlobalItems {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate variable or function at random
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(GlobalItems::Decl(Decl::arbitrary(u, c)?)),
@@ -237,7 +247,7 @@ pub enum Decl {
 }
 
 impl Decl {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?))
     }
 }
@@ -257,7 +267,7 @@ pub struct VarDecl {
 }
 
 impl VarDecl {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate a random basic type
         let btype = BType::arbitrary(u)?;
 
@@ -322,7 +332,7 @@ impl Display for BType {
 pub struct Index(Vec<Exp>);
 
 impl Index {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let mut index = Vec::new();
         loop {
             // Create zero or more array indicies
@@ -330,15 +340,18 @@ impl Index {
                 return Ok(Index(index));
             }
 
-            // Create a const integer as the next array index
+            // Initialize a context expecting `const int`
+            let mut c = c.clone();
             c.expected_type = Type::Int;
             c.expected_const = true;
-            let exp = Exp::arbitrary(u, c)?;
+
+            // Create a const integer as the next array index
+            let exp = Exp::arbitrary(u, &c)?;
             index.push(exp);
         }
     }
 
-    fn apply(&self, mut base_type: Type, c: &mut Context) -> Type {
+    fn apply(&self, mut base_type: Type, c: &Context) -> Type {
         // Apply the array index to the base type
         // Reverse order: int x[2][8] -> [[int x 8] x 2]
         for exp in self.0.iter().rev() {
@@ -373,7 +386,7 @@ pub struct VarDef {
 }
 
 impl VarDef {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context, base_type: Type, is_const: bool) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context, base_type: Type, is_const: bool) -> Result<Self> {
         // Generate a random identifier for this definition
         let ident = Ident::arbitrary(u)?;
 
@@ -382,16 +395,10 @@ impl VarDef {
         let var_type = index.apply(base_type, c);
 
         // Generate assigned value
+        let mut c: Context = c.clone();
         c.expected_type = var_type.clone();
         c.expected_const = is_const;
-        let init_val = VarInitVal::arbitrary(u, c)?;
-
-        // Add variable to context (also env if constant)
-        c.ctx.insert(ident.to_string(), var_type.clone());
-        if is_const {
-            let value = init_val.eval(c);
-            c.env.insert(ident.to_string(), value);
-        }
+        let init_val = VarInitVal::arbitrary(u, &c)?;
 
         // Return the variable definition
         Ok(VarDef {
@@ -421,18 +428,22 @@ pub enum VarInitVal {
 }
 
 impl VarInitVal {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match c.expected_type.clone() {
             Type::Int | Type::Float => {
                 // Random integer or float
                 Ok(VarInitVal::Exp(Exp::arbitrary(u, c)?))
             }
             Type::Array(content_type, content_len) => {
+                // Initialize a context expecting `content_type`
+                // Constant flag inherits from parent context
+                let mut c = c.clone();
+                c.expected_type = *content_type.clone();
+
                 // Fill array with random contents
                 let mut init_val_vec = Vec::new();
                 for _ in 0..content_len {
-                    c.expected_type = *content_type.clone();
-                    let init_val = VarInitVal::arbitrary(u, c)?;
+                    let init_val = VarInitVal::arbitrary(u, &c)?;
                     init_val_vec.push(init_val);
                 }
                 Ok(VarInitVal::InitValVec(init_val_vec))
@@ -471,15 +482,18 @@ pub enum FuncDef {
 }
 
 impl FuncDef {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
         let ident = Ident::arbitrary(u)?;
         let func_fparams = FuncFParams::arbitrary(u, c)?;
 
-        // Generate function statements with return type specified
+        // Initialize a context expecting return type `func_type`
+        let mut c = c.clone();
         c.return_type = func_type.clone().into();
-        let block = Block::arbitrary(u, c)?;
+
+        // Generate function statements with return type specified
+        let block = Block::arbitrary(u, &c)?;
         Ok(FuncDef::ParameterFuncDef((func_type, ident, func_fparams, block)))
     }
 }
@@ -526,7 +540,7 @@ pub struct FuncFParams {
 }
 
 impl FuncFParams {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let mut func_fparams_vec = Vec::new();
         loop {
             // Generate zero or more function params
@@ -560,16 +574,13 @@ pub enum FuncFParam {
 }
 
 impl FuncFParam {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate array (x: int[][4]) or non-array (x: int) function parameter
         match u.arbitrary::<u8>()? % 2 {
             0 => {
                 // Generate signature
                 let btype = BType::arbitrary(u)?;
                 let ident = Ident::arbitrary(u)?;
-
-                // Add to context
-                c.ctx.insert(ident.to_string(), btype.clone().into());
                 Ok(FuncFParam::NonArray((btype, ident)))
             }
             1 => {
@@ -579,10 +590,6 @@ impl FuncFParam {
 
                 // Generate random array type
                 let var_index = Index::arbitrary(u, c)?;
-                let var_type = var_index.apply(btype.clone().into(), c);
-
-                // Add to context
-                c.ctx.insert(ident.to_string(), var_type.clone());
                 Ok(FuncFParam::Array((btype, ident, var_index)))
             }
             _ => unreachable!(),
@@ -605,7 +612,7 @@ pub struct Block {
 }
 
 impl Block {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let mut block_vec = Vec::new();
 
         // Generate zero or more predecessing block items
@@ -645,7 +652,7 @@ pub enum BlockItem {
 }
 
 impl BlockItem {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate declaration or statement at random
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(BlockItem::Decl(Decl::arbitrary(u, c)?)),
@@ -677,19 +684,31 @@ pub enum Stmt {
 }
 
 impl Stmt {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        // Generate a random statement
-        // TODO prevent generating break or continue if not in a loop
-        match u.arbitrary::<u8>()? % 8 {
-            0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
-            1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
-            2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
-            3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
-            4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
-            5 => Ok(Stmt::Break(Break)),
-            6 => Ok(Stmt::Continue(Continue)),
-            7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
-            _ => unreachable!(),
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+        if c.in_loop {
+            // Generate a random statement including break and continue
+            match u.arbitrary::<u8>()? % 8 {
+                0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
+                1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
+                2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
+                3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
+                4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
+                5 => Ok(Stmt::Break(Break)),
+                6 => Ok(Stmt::Continue(Continue)),
+                7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
+                _ => unreachable!(),
+            }
+        } else {
+            // Generate a random statement excluding break and continue
+            match u.arbitrary::<u8>()? % 6 {
+                0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
+                1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
+                2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
+                3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
+                4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
+                5 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
+                _ => unreachable!(),
+            }
         }
     }
 }
@@ -716,15 +735,19 @@ pub struct Assign {
 }
 
 impl Assign {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Randomly find a variable in context
         // TODO ensure such variable exists
         let (lval, ty) = LVal::arbitrary_infer(u, c)?;
 
+        // Initialize a new context with expected type `ty`
+        let mut c = c.clone();
+        c.expected_type = ty;
+        c.expected_const = false;
+
         // Generate a expression of matching type
         // Can be generated because `c = c` is possible
-        c.expected_type = ty;
-        let exp = Exp::arbitrary(u, c)?;
+        let exp = Exp::arbitrary(u, &c)?;
         Ok(Assign { lval, exp })
     }
 }
@@ -741,15 +764,18 @@ pub struct ExpStmt {
 }
 
 impl ExpStmt {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
             // Generate a random type for this expression
             let func_type = FuncType::arbitrary(u)?;
 
-            // Generate a random statement of this type (non-constant)
+            // Initialize a context expecting this type
+            let mut c = c.clone();
             c.expected_type = func_type.clone().into();
             c.expected_const = false;
-            Some(Exp::arbitrary(u, c)?)
+
+            // Generate a random statement of this type (non-constant)
+            Some(Exp::arbitrary(u, &c)?)
         } else {
             // Possible to generate a stray semicolon
             None
@@ -775,11 +801,18 @@ pub struct If {
 }
 
 impl If {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        let cond = Cond::arbitrary(u, c)?;
-        let then = Stmt::arbitrary(u, c)?;
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+        // Context for condition expects int type
+        let mut c = c.clone();
+        c.expected_type = Type::Int;
+        c.expected_const = false;
+        let cond = Cond::arbitrary(u, &c)?;
+
+        // Context for then and else is in loop
+        c.in_loop = true;
+        let then = Stmt::arbitrary(u, &c)?;
         let else_then = if u.arbitrary()? {
-            Some(Stmt::arbitrary(u, c)?)
+            Some(Stmt::arbitrary(u, &c)?)
         } else {
             None
         };
@@ -807,9 +840,16 @@ pub struct While {
 }
 
 impl While {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
-        let cond = Cond::arbitrary(u, c)?;
-        let body = Stmt::arbitrary(u, c)?;
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+        // Context for condition expects int type
+        let mut c = c.clone();
+        c.expected_type = Type::Int;
+        c.expected_const = false;
+        let cond = Cond::arbitrary(u, &c)?;
+
+        // Context for body is in loop
+        c.in_loop = true;
+        let body = Stmt::arbitrary(u, &c)?;
         Ok(While { cond, body })
     }
 }
@@ -844,10 +884,12 @@ pub struct Return {
 }
 
 impl Return {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
+            // Context for returned expression expects return type
+            let mut c = c.clone();
             c.expected_type = c.return_type.clone();
-            Some(Exp::arbitrary(u, c)?)
+            Some(Exp::arbitrary(u, &c)?)
         } else {
             None
         };
@@ -871,7 +913,7 @@ pub struct Exp {
 }
 
 impl Exp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let add_exp = AddExp::arbitrary(u, c)?;
         Ok(Exp {
             add_exp: Box::new(add_exp),
@@ -895,7 +937,7 @@ pub struct Cond {
 }
 
 impl Cond {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let l_or_exp = LOrExp::arbitrary(u, c)?;
         Ok(Cond { l_or_exp })
     }
@@ -914,14 +956,14 @@ pub struct LVal {
 }
 
 impl LVal {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // TODO make arbitrary identifier type match
         let id = Ident::arbitrary(u)?;
         let exp_vec = Vec::new();
         Ok(LVal { id, exp_vec })
     }
 
-    fn arbitrary_infer(u: &mut Unstructured, c: &mut Context) -> Result<(Self, Type)> {
+    fn arbitrary_infer(u: &mut Unstructured, c: &Context) -> Result<(Self, Type)> {
         // TODO make arbitrary identifier type match
         let id = Ident::arbitrary(u)?;
         let exp_vec = Vec::new();
@@ -975,7 +1017,7 @@ pub enum PrimaryExp {
 }
 
 impl PrimaryExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c)?))),
             1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c)?)),
@@ -1010,7 +1052,7 @@ pub enum Number {
 }
 
 impl Number {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match c.expected_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             Type::Float => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
@@ -1043,7 +1085,7 @@ pub enum UnaryExp {
 }
 
 impl UnaryExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c)?))),
             1 => {
@@ -1132,7 +1174,7 @@ pub struct FuncRParams {
 }
 
 impl FuncRParams {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         let mut exp_vec = Vec::new();
         loop {
             // TODO make param type match
@@ -1168,7 +1210,7 @@ pub enum MulExp {
 }
 
 impl MulExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 4 {
             0 => Ok(MulExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, c)?))),
             1 => {
@@ -1255,7 +1297,7 @@ pub enum AddExp {
 }
 
 impl AddExp {
-    fn arbitrary(u: &mut Unstructured, ctx: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, ctx: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, ctx)?))),
             1 => {
@@ -1330,13 +1372,13 @@ pub enum RelExp {
 }
 
 impl RelExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(RelExp::AddExp(AddExp::arbitrary(u, c, Type::Float)?)),
+            0 => Ok(RelExp::AddExp(AddExp::arbitrary(u, c)?)),
             1 => {
                 let a = RelExp::arbitrary(u, c)?;
                 let b = RelOp::arbitrary(u)?;
-                let c = AddExp::arbitrary(u, c, Type::Float)?;
+                let c = AddExp::arbitrary(u, c)?;
                 Ok(RelExp::OpExp((Box::new(a), b, c)))
             }
             _ => unreachable!(),
@@ -1361,7 +1403,7 @@ pub enum EqExp {
 }
 
 impl EqExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(EqExp::RelExp(RelExp::arbitrary(u, c)?)),
             1 => {
@@ -1396,7 +1438,7 @@ pub enum LAndExp {
 }
 
 impl LAndExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(LAndExp::EqExp(EqExp::arbitrary(u, c)?)),
             1 => {
@@ -1425,7 +1467,7 @@ pub enum LOrExp {
 }
 
 impl LOrExp {
-    fn arbitrary(u: &mut Unstructured, c: &mut Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(LOrExp::LAndExp(LAndExp::arbitrary(u, c)?)),
             1 => {
