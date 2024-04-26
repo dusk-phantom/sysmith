@@ -189,7 +189,7 @@ impl Display for ExpStmt {
 
 #[derive(Debug, Clone)]
 pub struct If {
-    pub cond: Cond,
+    pub cond: Exp,
     pub then: Stmt,
     pub else_then: Option<Stmt>,
 }
@@ -200,7 +200,7 @@ impl If {
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
-        let cond = Cond::arbitrary(u, &c)?;
+        let cond = Exp::arbitrary(u, &c)?;
 
         // Context for then and else is in loop
         c.in_loop = true;
@@ -229,7 +229,7 @@ impl Display for If {
 
 #[derive(Debug, Clone)]
 pub struct While {
-    pub cond: Cond,
+    pub cond: Exp,
     pub body: Stmt,
 }
 
@@ -239,7 +239,7 @@ impl While {
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
-        let cond = Cond::arbitrary(u, &c)?;
+        let cond = Exp::arbitrary(u, &c)?;
 
         // Context for body is in loop
         c.in_loop = true;
