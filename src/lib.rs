@@ -1,5 +1,5 @@
-mod ast;
 mod number;
+mod program;
 
-pub use ast::*;
+pub use program::*;
 pub use number::*;
