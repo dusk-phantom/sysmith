@@ -10,7 +10,7 @@ impl<'a> Arbitrary<'a> for CompUnit {
         let mut global_items = Vec::new();
 
         // Initialize with empty context
-        let c = Context {
+        let mut context = Context {
             ctx: HashMap::new(),
             env: HashMap::new(),
             expected_type: Type::Void,
@@ -21,7 +21,8 @@ impl<'a> Arbitrary<'a> for CompUnit {
 
         // Generate at least one global item
         loop {
-            let item = GlobalItems::arbitrary(u, &c)?;
+            let item = GlobalItems::arbitrary(u, &context)?;
+            item.resolve(&mut context);
             global_items.push(item);
             if u.arbitrary()? {
                 return Ok(CompUnit { global_items });
@@ -46,15 +47,24 @@ impl Display for CompUnit {
 
 #[derive(Debug, Clone)]
 pub enum GlobalItems {
-    Decl(Decl),
+    Decl(VarDecl),
     FuncDef(FuncDef),
+}
+
+impl Resolve for GlobalItems {
+    fn resolve(&self, ctx: &mut Context) {
+        match self {
+            GlobalItems::Decl(a) => a.resolve(ctx),
+            GlobalItems::FuncDef(a) => a.resolve(ctx),
+        }
+    }
 }
 
 impl<'a> ArbitraryInContext<'a> for GlobalItems {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate variable or function at random
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(GlobalItems::Decl(Decl::arbitrary(u, c)?)),
+            0 => Ok(GlobalItems::Decl(VarDecl::arbitrary(u, c)?)),
             1 => Ok(GlobalItems::FuncDef(FuncDef::arbitrary(u, c)?)),
             _ => unreachable!(),
         }

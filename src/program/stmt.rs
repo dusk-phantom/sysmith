@@ -8,18 +8,20 @@ pub struct Block {
 impl<'a> ArbitraryInContext<'a> for Block {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut block_vec = Vec::new();
+        let mut local_context = c.clone();
 
         // Generate zero or more predecessing block items
         loop {
             if u.arbitrary()? {
                 break;
             }
-            let block_item = BlockItem::arbitrary(u, c)?;
+            let block_item = BlockItem::arbitrary(u, &local_context)?;
+            block_item.resolve(&mut local_context);
             block_vec.push(block_item);
         }
 
         // Generate a return statement
-        let return_stmt = Stmt::Return(Return::arbitrary(u, c)?);
+        let return_stmt = Stmt::Return(Return::arbitrary(u, &local_context)?);
         block_vec.push(BlockItem::Stmt(return_stmt));
         Ok(Block { block_vec })
     }
@@ -41,15 +43,24 @@ impl Display for Block {
 
 #[derive(Debug, Clone)]
 pub enum BlockItem {
-    Decl(Decl),
+    Decl(VarDecl),
     Stmt(Stmt),
+}
+
+impl Resolve for BlockItem {
+    fn resolve(&self, c: &mut Context) {
+        match self {
+            BlockItem::Decl(a) => a.resolve(c),
+            BlockItem::Stmt(a) => a.resolve(c),
+        }
+    }
 }
 
 impl<'a> ArbitraryInContext<'a> for BlockItem {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate declaration or statement at random
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(BlockItem::Decl(Decl::arbitrary(u, c)?)),
+            0 => Ok(BlockItem::Decl(VarDecl::arbitrary(u, c)?)),
             1 => Ok(BlockItem::Stmt(Stmt::arbitrary(u, c)?)),
             _ => unreachable!(),
         }
@@ -75,6 +86,13 @@ pub enum Stmt {
     Break(Break),
     Continue(Continue),
     Return(Return),
+}
+
+impl Resolve for Stmt {
+    fn resolve(&self, _: &mut Context) {
+        // Statement does not declare something,
+        // so it doesn't modify context
+    }
 }
 
 impl<'a> ArbitraryInContext<'a> for Stmt {
