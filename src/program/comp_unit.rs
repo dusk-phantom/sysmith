@@ -63,7 +63,7 @@ impl Resolve for GlobalItems {
 impl<'a> ArbitraryInContext<'a> for GlobalItems {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate variable or function at random
-        match u.arbitrary::<u8>()? % 2 {
+        match u.int_in_range(0..=1)? {
             0 => Ok(GlobalItems::Decl(VarDecl::arbitrary(u, c)?)),
             1 => Ok(GlobalItems::FuncDef(FuncDef::arbitrary(u, c)?)),
             _ => unreachable!(),

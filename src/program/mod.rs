@@ -16,6 +16,9 @@ pub mod value;
 pub mod value_type;
 pub mod var_decl;
 
+#[macro_use]
+mod macros;
+
 pub use array::*;
 pub use comp_unit::*;
 pub use context::*;

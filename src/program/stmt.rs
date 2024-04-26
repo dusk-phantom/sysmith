@@ -1,3 +1,5 @@
+use crate::random_retry;
+
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -59,7 +61,7 @@ impl Resolve for BlockItem {
 impl<'a> ArbitraryInContext<'a> for BlockItem {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate declaration or statement at random
-        match u.arbitrary::<u8>()? % 2 {
+        match u.int_in_range(0..=1)? {
             0 => Ok(BlockItem::Decl(VarDecl::arbitrary(u, c)?)),
             1 => Ok(BlockItem::Stmt(Stmt::arbitrary(u, c)?)),
             _ => unreachable!(),
@@ -97,31 +99,29 @@ impl Resolve for Stmt {
 
 impl<'a> ArbitraryInContext<'a> for Stmt {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        if c.in_loop {
-            // Generate a random statement including break and continue
-            // TODO retry if the last one fails
-            match u.arbitrary::<u8>()? % 8 {
-                0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
-                1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
-                2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
-                3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
-                4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
-                5 => Ok(Stmt::Break(Break)),
-                6 => Ok(Stmt::Continue(Continue)),
-                7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
-                _ => unreachable!(),
-            }
-        } else {
-            // Generate a random statement excluding break and continue
-            match u.arbitrary::<u8>()? % 6 {
-                0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
-                1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
-                2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
-                3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
-                4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
-                5 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
-                _ => unreachable!(),
-            }
+        // Generate a random statement including break and continue
+        random_retry! { size = 8, bytes = u;
+            0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
+            1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
+            2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
+            3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
+            4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
+            5 => {
+                // Prevent break outside of loop
+                if !c.in_loop {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                Ok(Stmt::Break(Break))
+            },
+            6 => {
+                // Prevent continue outside of loop
+                if !c.in_loop {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                Ok(Stmt::Continue(Continue))
+            },
+            // Safety: return type is numeric, so it can't fail
+            7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
         }
     }
 }
@@ -148,6 +148,8 @@ pub struct Assign {
 }
 
 impl<'a> ArbitraryInContext<'a> for Assign {
+    /// Safety: if there's nothing in context, this function will fail
+    /// Error should be handled manually
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Filter number or array left values from context
         let mut candidates: Vec<(LVal, Type)> = c.ctx.iter().filter_map(|(id, ty)| {
@@ -194,6 +196,7 @@ impl<'a> ArbitraryInContext<'a> for Assign {
         c.expected_const = false;
 
         // Generate a expression of matching type
+        // Safety: type is guaranteed to be int or float
         let exp = Exp::arbitrary(u, &c)?;
         Ok(Assign { lval, exp })
     }
@@ -222,7 +225,8 @@ impl<'a> ArbitraryInContext<'a> for ExpStmt {
             c.expected_const = false;
 
             // Generate a random statement of this type (non-constant)
-            // If fail, just return None instead of error
+            // Safety: if type is void, it's possible to fail,
+            // but we'll return None in that case
             match Exp::arbitrary(u, &c) {
                 Ok(e) => Some(e),
                 Err(_) => None,
@@ -254,6 +258,7 @@ pub struct If {
 impl<'a> ArbitraryInContext<'a> for If {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
+        // Safety: expected type is int so it can't fail
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
@@ -293,6 +298,7 @@ pub struct While {
 impl<'a> ArbitraryInContext<'a> for While {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
+        // Safety: expected type is int so it can't fail
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
@@ -338,6 +344,7 @@ impl<'a> ArbitraryInContext<'a> for Return {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
             // Context for returned expression expects return type
+            // Safety: function return type is numeric, so it can't fail
             let mut c = c.clone();
             c.expected_type = c.return_type.clone();
             Some(Exp::arbitrary(u, &c)?)

@@ -11,6 +11,12 @@ pub enum Type {
     Pointer(Box<Type>),
 }
 
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        matches!(self, Type::Int | Type::Float)
+    }
+}
+
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -57,7 +63,7 @@ pub enum BType {
 impl<'a> Arbitrary<'a> for BType {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         // Generate a random basic type
-        match u.arbitrary::<u8>()? % 2 {
+        match u.int_in_range(0..=1)? {
             0 => Ok(BType::Int),
             1 => Ok(BType::Float),
             _ => unreachable!(),
@@ -84,7 +90,7 @@ pub enum FuncType {
 
 impl<'a> Arbitrary<'a> for FuncType {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 3 {
+        match u.int_in_range(0..=2)? {
             0 => Ok(FuncType::Void),
             1 => Ok(FuncType::Int),
             2 => Ok(FuncType::Float),

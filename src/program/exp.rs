@@ -1,3 +1,5 @@
+use crate::random_retry;
+
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -11,23 +13,20 @@ pub enum Exp {
 }
 
 impl<'a> ArbitraryInContext<'a> for Exp {
+    /// Safety: if expected type is not numeric, it can possibly fail.
+    /// The failure should be handled manually.
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        // Select a random expression type
-        match u.arbitrary::<u8>()? % 6 {
-            0 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, c)?))),
-            1 => Ok(Exp::Number(Number::arbitrary(u, c)?)),
-            2 => {
-                let op = UnaryOp::arbitrary(u)?;
-                let exp = Box::new(Exp::arbitrary(u, c)?);
-                Ok(Exp::OpUnary((op, exp)))
-            }
-            3 => {
-                let a = Box::new(Exp::arbitrary(u, c)?);
-                let b = BinaryOp::arbitrary(u)?;
-                let c = Box::new(Exp::arbitrary(u, c)?);
-                Ok(Exp::OpExp((a, b, c)))
-            }
-            4 => {
+        // Select a random expression type.
+        // Only function argument will demand non-numeric type,
+        // so this function guarantees to succeed
+        random_retry! { size = 5, bytes = u;
+            0 => {
+                // Ensure not require constant for variable reference
+                // TODO filter constant (requires eval to return Result)
+                if c.expected_const {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                
                 // Get all candidates from environment
                 let mut candidates: Vec<Self> = c.ctx.iter().filter_map(|(id, ty)| {
                     let id = Ident::from(id.clone());
@@ -87,17 +86,43 @@ impl<'a> ArbitraryInContext<'a> for Exp {
                     None
                 }).collect::<Result<_, _>>()?;
 
-                // If constant or there's no candidate, report unable to construct
-                // TODO filter constant (requires eval to return Result)
-                if c.expected_const || candidates.is_empty() {
+                // If there's no candidate, report unable to construct
+                if candidates.is_empty() {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
                 
                 // Randomly choose a candidate
                 let selected_index = u.arbitrary::<usize>()? % candidates.len();
                 Ok(candidates.swap_remove(selected_index))
-            }
-            _ => unreachable!(),
+            },
+            1 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, c)?))),
+            2 => {
+                // Expected type must be numeric to generate unary expression
+                if !c.expected_type.is_numeric() {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                let op = UnaryOp::arbitrary(u)?;
+                let exp = Box::new(Exp::arbitrary(u, c)?);
+                Ok(Exp::OpUnary((op, exp)))
+            },
+            3 => {
+                // Expected type must be numeric to generate binary expression
+                if !c.expected_type.is_numeric() {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                let a = Box::new(Exp::arbitrary(u, c)?);
+                let b = BinaryOp::arbitrary(u)?;
+                let c = Box::new(Exp::arbitrary(u, c)?);
+                Ok(Exp::OpExp((a, b, c)))
+            },
+            4 => {
+                // Expected type must be numeric to generate number
+                // Safety: this can generate a constant number
+                if !c.expected_type.is_numeric() {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                Ok(Exp::Number(Number::arbitrary(u, c)?))
+            },
         }
     }
 }
@@ -254,7 +279,7 @@ pub enum UnaryOp {
 
 impl<'a> Arbitrary<'a> for UnaryOp {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 3 {
+        match u.int_in_range(0..=2)? {
             0 => Ok(UnaryOp::Add),
             1 => Ok(UnaryOp::Minus),
             2 => Ok(UnaryOp::Exclamation),
@@ -311,7 +336,7 @@ pub enum BinaryOp {
 
 impl<'a> Arbitrary<'a> for BinaryOp {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 13 {
+        match u.int_in_range(0..=12)? {
             0 => Ok(BinaryOp::Add),
             1 => Ok(BinaryOp::Minus),
             2 => Ok(BinaryOp::Mul),
