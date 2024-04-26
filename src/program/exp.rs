@@ -2,12 +2,12 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct Exp {
-    pub add_exp: Box<AddExp>,
+    pub add_exp: Box<BinaryExp>,
 }
 
 impl Exp {
     pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        let add_exp = AddExp::arbitrary(u, c)?;
+        let add_exp = BinaryExp::arbitrary(u, c)?;
         Ok(Exp {
             add_exp: Box::new(add_exp),
         })
@@ -21,24 +21,6 @@ impl Exp {
 impl Display for Exp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.add_exp)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Cond {
-    pub l_or_exp: LOrExp,
-}
-
-impl Cond {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        let l_or_exp = LOrExp::arbitrary(u, c)?;
-        Ok(Cond { l_or_exp })
-    }
-}
-
-impl Display for Cond {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.l_or_exp)
     }
 }
 
@@ -295,109 +277,78 @@ impl Display for FuncRParams {
 }
 
 #[derive(Debug, Clone)]
-pub enum MulExp {
-    UnaryExp(Box<UnaryExp>),
-    MulExp((Box<MulExp>, UnaryExp)),
-    DivExp((Box<MulExp>, UnaryExp)),
-    ModExp((Box<MulExp>, UnaryExp)),
-}
-
-impl MulExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 4 {
-            0 => Ok(MulExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, c)?))),
-            1 => {
-                let a = MulExp::arbitrary(u, c)?;
-                let b = UnaryExp::arbitrary(u, c)?;
-                Ok(MulExp::MulExp((Box::new(a), b)))
-            }
-            2 => {
-                let a = MulExp::arbitrary(u, c)?;
-                let b = UnaryExp::arbitrary(u, c)?;
-                Ok(MulExp::DivExp((Box::new(a), b)))
-            }
-            3 => {
-                let a = MulExp::arbitrary(u, c)?;
-                let b = UnaryExp::arbitrary(u, c)?;
-                Ok(MulExp::ModExp((Box::new(a), b)))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn eval(&self, ctx: &Context) -> Value {
-        match self {
-            Self::MulExp((a, b)) => {
-                let a = a.eval(ctx);
-                let b = b.eval(ctx);
-                a * b
-            }
-            Self::DivExp((a, b)) => {
-                let a = a.eval(ctx);
-                let b = b.eval(ctx);
-                a / b
-            }
-            Self::ModExp((a, b)) => {
-                let a = a.eval(ctx);
-                let b = b.eval(ctx);
-                a % b
-            }
-            Self::UnaryExp(a) => a.eval(ctx),
-        }
-    }
-}
-
-impl Display for MulExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnaryExp(a) => write!(f, "{}", a),
-            Self::MulExp((a, b)) => write!(f, "({}) * ({})", a, b),
-            Self::DivExp((a, b)) => write!(f, "({}) / ({})", a, b),
-            Self::ModExp((a, b)) => write!(f, "({}) % ({})", a, b),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum AddOp {
+pub enum BinaryOp {
     Add,
     Minus,
+    Mul,
+    Div,
+    Mod,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+    Equal,
+    NotEqual,
+    And,
+    Or,
 }
 
-impl AddOp {
+impl BinaryOp {
     pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(AddOp::Add),
-            1 => Ok(AddOp::Minus),
+        match u.arbitrary::<u8>()? % 13 {
+            0 => Ok(BinaryOp::Add),
+            1 => Ok(BinaryOp::Minus),
+            2 => Ok(BinaryOp::Mul),
+            3 => Ok(BinaryOp::Div),
+            4 => Ok(BinaryOp::Mod),
+            5 => Ok(BinaryOp::Less),
+            6 => Ok(BinaryOp::LessOrEqual),
+            7 => Ok(BinaryOp::Greater),
+            8 => Ok(BinaryOp::GreaterOrEqual),
+            9 => Ok(BinaryOp::Equal),
+            10 => Ok(BinaryOp::NotEqual),
+            11 => Ok(BinaryOp::And),
+            12 => Ok(BinaryOp::Or),
             _ => unreachable!(),
         }
     }
 }
 
-impl Display for AddOp {
+impl Display for BinaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AddOp::Add => write!(f, "+"),
-            AddOp::Minus => write!(f, "-"),
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Minus => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::Mod => write!(f, "%"),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::LessOrEqual => write!(f, "<="),
+            BinaryOp::Greater => write!(f, ">"),
+            BinaryOp::GreaterOrEqual => write!(f, ">="),
+            BinaryOp::Equal => write!(f, "=="),
+            BinaryOp::NotEqual => write!(f, "!="),
+            BinaryOp::And => write!(f, "&&"),
+            BinaryOp::Or => write!(f, "||"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum AddExp {
-    MulExp(Box<MulExp>),
-    OpExp((Box<AddExp>, AddOp, MulExp)),
+pub enum BinaryExp {
+    UnaryExp(Box<UnaryExp>),
+    OpExp((Box<BinaryExp>, BinaryOp, UnaryExp)),
 }
 
-impl AddExp {
+impl BinaryExp {
     pub fn arbitrary(u: &mut Unstructured, ctx: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(AddExp::MulExp(Box::new(MulExp::arbitrary(u, ctx)?))),
+            0 => Ok(BinaryExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, ctx)?))),
             1 => {
-                let a = AddExp::arbitrary(u, ctx)?;
-                let b = AddOp::arbitrary(u)?;
-                let c = MulExp::arbitrary(u, ctx)?;
-                Ok(AddExp::OpExp((Box::new(a), b, c)))
+                let a = BinaryExp::arbitrary(u, ctx)?;
+                let b = BinaryOp::arbitrary(u)?;
+                let c = UnaryExp::arbitrary(u, ctx)?;
+                Ok(BinaryExp::OpExp((Box::new(a), b, c)))
             }
             _ => unreachable!(),
         }
@@ -405,179 +356,35 @@ impl AddExp {
 
     pub fn eval(&self, ctx: &Context) -> Value {
         match self {
-            Self::MulExp(a) => a.eval(ctx),
+            Self::UnaryExp(a) => a.eval(ctx),
             Self::OpExp((a, b, c)) => {
                 let a = a.eval(ctx);
                 let c = c.eval(ctx);
                 match b {
-                    AddOp::Add => a + c,
-                    AddOp::Minus => a - c,
+                    BinaryOp::Add => a + c,
+                    BinaryOp::Minus => a - c,
+                    BinaryOp::Mul => a * c,
+                    BinaryOp::Div => a / c,
+                    BinaryOp::Mod => a % c,
+                    BinaryOp::Less => Value::Int(if a < c { 1 } else { 0 }),
+                    BinaryOp::LessOrEqual => Value::Int(if a <= c { 1 } else { 0 }),
+                    BinaryOp::Greater => Value::Int(if a > c { 1 } else { 0 }),
+                    BinaryOp::GreaterOrEqual => Value::Int(if a >= c { 1 } else { 0 }),
+                    BinaryOp::Equal => Value::Int(if a == c { 1 } else { 0 }),
+                    BinaryOp::NotEqual => Value::Int(if a != c { 1 } else { 0 }),
+                    BinaryOp::And => Value::Int(if a != Value::Int(0) && c != Value::Int(0) { 1 } else { 0 }),
+                    BinaryOp::Or => Value::Int(if a != Value::Int(0) || c != Value::Int(0) { 1 } else { 0 }),
                 }
             }
         }
     }
 }
 
-impl Display for AddExp {
+impl Display for BinaryExp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MulExp(a) => write!(f, "{}", a),
+            Self::UnaryExp(a) => write!(f, "{}", a),
             Self::OpExp((a, b, c)) => write!(f, "({}) {} ({})", a, b, c),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum RelOp {
-    Less,
-    LessOrEqual,
-    Greater,
-    GreaterOrEqual,
-}
-
-impl RelOp {
-    pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 4 {
-            0 => Ok(RelOp::Less),
-            1 => Ok(RelOp::LessOrEqual),
-            2 => Ok(RelOp::Greater),
-            3 => Ok(RelOp::GreaterOrEqual),
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for RelOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RelOp::Less => write!(f, "<"),
-            RelOp::LessOrEqual => write!(f, "<="),
-            RelOp::Greater => write!(f, ">"),
-            RelOp::GreaterOrEqual => write!(f, ">="),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum RelExp {
-    AddExp(AddExp),
-    OpExp((Box<RelExp>, RelOp, AddExp)),
-}
-
-impl RelExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(RelExp::AddExp(AddExp::arbitrary(u, c)?)),
-            1 => {
-                let a = RelExp::arbitrary(u, c)?;
-                let b = RelOp::arbitrary(u)?;
-                let c = AddExp::arbitrary(u, c)?;
-                Ok(RelExp::OpExp((Box::new(a), b, c)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for RelExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::AddExp(a) => write!(f, "{}", a),
-            Self::OpExp((a, b, c)) => write!(f, "({}) {} ({})", a, b, c),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum EqExp {
-    RelExp(RelExp),
-    EqualExp((Box<EqExp>, RelExp)),
-    NotEqualExp((Box<EqExp>, RelExp)),
-}
-
-impl EqExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 3 {
-            0 => Ok(EqExp::RelExp(RelExp::arbitrary(u, c)?)),
-            1 => {
-                let a = EqExp::arbitrary(u, c)?;
-                let b = RelExp::arbitrary(u, c)?;
-                Ok(EqExp::EqualExp((Box::new(a), b)))
-            }
-            2 => {
-                let a = EqExp::arbitrary(u, c)?;
-                let b = RelExp::arbitrary(u, c)?;
-                Ok(EqExp::NotEqualExp((Box::new(a), b)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for EqExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::RelExp(a) => write!(f, "{}", a),
-            Self::EqualExp((a, b)) => write!(f, "({}) == ({})", a, b),
-            Self::NotEqualExp((a, b)) => write!(f, "({}) != ({})", a, b),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum LAndExp {
-    EqExp(EqExp),
-    AndExp((Box<LAndExp>, EqExp)),
-}
-
-impl LAndExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(LAndExp::EqExp(EqExp::arbitrary(u, c)?)),
-            1 => {
-                let a = LAndExp::arbitrary(u, c)?;
-                let b = EqExp::arbitrary(u, c)?;
-                Ok(LAndExp::AndExp((Box::new(a), b)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for LAndExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EqExp(a) => write!(f, "{}", a),
-            Self::AndExp((a, b)) => write!(f, "({}) && ({})", a, b),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum LOrExp {
-    LAndExp(LAndExp),
-    OrExp((Box<LOrExp>, LAndExp)),
-}
-
-impl LOrExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(LOrExp::LAndExp(LAndExp::arbitrary(u, c)?)),
-            1 => {
-                let a = LOrExp::arbitrary(u, c)?;
-                let b = LAndExp::arbitrary(u, c)?;
-                Ok(LOrExp::OrExp((Box::new(a), b)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Display for LOrExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::LAndExp(a) => write!(f, "{}", a),
-            Self::OrExp((a, b)) => write!(f, "({}) || ({})", a, b),
         }
     }
 }
