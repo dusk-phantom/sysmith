@@ -349,14 +349,16 @@ pub struct Return {
 
 impl<'a> ArbitraryIn<'a, Context> for Return {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        let exp = if u.arbitrary()? {
-            // Context for returned expression expects return type
-            // Safety: function return type is numeric, so it can't fail
-            let mut c = c.clone();
-            c.expected_type = c.return_type.clone();
-            Some(Exp::arbitrary(u, &c)?)
-        } else {
-            None
+        let exp = match c.return_type {
+            Type::Void => None,
+            Type::Float | Type::Int => {
+                // Context for returned expression expects return type
+                // Safety: function return type is numeric, so it can't fail
+                let mut c = c.clone();
+                c.expected_type = c.return_type.clone();
+                Some(Exp::arbitrary(u, &c)?)
+            }
+            _ => panic!("Invalid return type")
         };
         Ok(Return { exp })
     }
