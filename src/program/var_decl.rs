@@ -5,8 +5,8 @@ pub enum Decl {
     VarDecl(VarDecl),
 }
 
-impl Decl {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for Decl {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?))
     }
 }
@@ -25,8 +25,8 @@ pub struct VarDecl {
     pub const_def_vec: PVec<VarDef>,
 }
 
-impl VarDecl {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for VarDecl {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate a random basic type and constant flag
         let btype = BType::arbitrary(u)?;
         let is_const = u.arbitrary()?;
@@ -73,8 +73,8 @@ pub struct VarDef {
     pub init_val: VarInitVal,
 }
 
-impl VarDef {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for VarDef {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate a random identifier for this definition
         let ident = Ident::arbitrary(u)?;
 
@@ -98,13 +98,7 @@ impl VarDef {
 
 impl Display for VarDef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{} = {}",
-            self.ident,
-            self.index,
-            self.init_val,
-        )
+        write!(f, "{}{} = {}", self.ident, self.index, self.init_val,)
     }
 }
 
@@ -114,8 +108,8 @@ pub enum VarInitVal {
     InitValVec(Vec<VarInitVal>),
 }
 
-impl VarInitVal {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for VarInitVal {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         match c.expected_type.clone() {
             Type::Int | Type::Float => {
                 // Random integer or float
@@ -138,8 +132,10 @@ impl VarInitVal {
             _ => panic!("Invalid type"),
         }
     }
+}
 
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for VarInitVal {
+    fn eval(&self, ctx: &Context) -> Value {
         match self {
             VarInitVal::Exp(a) => a.eval(ctx),
             VarInitVal::InitValVec(a) => Value::Array(a.iter().map(|x| x.eval(ctx)).collect()),

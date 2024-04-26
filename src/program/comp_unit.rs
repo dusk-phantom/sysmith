@@ -50,8 +50,8 @@ pub enum GlobalItems {
     FuncDef(FuncDef),
 }
 
-impl GlobalItems {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for GlobalItems {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate variable or function at random
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(GlobalItems::Decl(Decl::arbitrary(u, c)?)),

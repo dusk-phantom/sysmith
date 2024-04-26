@@ -5,8 +5,8 @@ pub enum FuncDef {
     ParameterFuncDef((FuncType, Ident, FuncFParams, Block)),
 }
 
-impl FuncDef {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for FuncDef {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
         let ident = Ident::arbitrary(u)?;
@@ -18,7 +18,12 @@ impl FuncDef {
 
         // Generate function statements with return type specified
         let block = Block::arbitrary(u, &c)?;
-        Ok(FuncDef::ParameterFuncDef((func_type, ident, func_fparams, block)))
+        Ok(FuncDef::ParameterFuncDef((
+            func_type,
+            ident,
+            func_fparams,
+            block,
+        )))
     }
 }
 
@@ -35,8 +40,8 @@ pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
 }
 
-impl FuncFParams {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for FuncFParams {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut func_fparams_vec = Vec::new();
         loop {
             // Generate zero or more function params
@@ -69,8 +74,8 @@ pub enum FuncFParam {
     Array((BType, Ident, Index)),
 }
 
-impl FuncFParam {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for FuncFParam {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate array (x: int[][4]) or non-array (x: int) function parameter
         match u.arbitrary::<u8>()? % 2 {
             0 => {
