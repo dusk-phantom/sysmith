@@ -11,6 +11,23 @@ pub enum Type {
     Pointer(Box<Type>),
 }
 
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // Int can be implicitly converted to and from float
+            (Type::Int | Type::Float, Type::Int | Type::Float) => true,
+            (Type::Void, Type::Void) => true,
+            (Type::Func(a, b), Type::Func(c, d)) => a == c && b == d,
+            (Type::Array(a, b), Type::Array(c, d)) => a == c && b == d,
+            (Type::Pointer(a), Type::Pointer(b)) => a == b,
+            // Array can be implicitly converted to and from pointer
+            (Type::Array(a, _), Type::Pointer(b)) => a == b,
+            (Type::Pointer(a), Type::Array(b, _)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl From<BType> for Type {
     fn from(btype: BType) -> Self {
         match btype {
@@ -37,8 +54,8 @@ pub enum BType {
     Float,
 }
 
-impl BType {
-    pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+impl<'a> Arbitrary<'a> for BType {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         // Generate a random basic type
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(BType::Int),
@@ -65,8 +82,8 @@ pub enum FuncType {
     Float,
 }
 
-impl FuncType {
-    pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+impl<'a> Arbitrary<'a> for FuncType {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(FuncType::Void),
             1 => Ok(FuncType::Int),

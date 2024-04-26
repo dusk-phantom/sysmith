@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone)]
-pub struct Index(Vec<Exp>);
+pub struct Index(pub Vec<Exp>);
 
 impl<'a> ArbitraryInContext<'a> for Index {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {

@@ -1,51 +1,185 @@
 use super::*;
 
 #[derive(Debug, Clone)]
-pub struct Exp {
-    pub add_exp: Box<BinaryExp>,
+pub enum Exp {
+    Exp(Box<Exp>),
+    LVal(LVal),
+    Number(Number),
+    FuncCall((Ident, Option<FuncRParams>)),
+    OpUnary((UnaryOp, Box<Exp>)),
+    OpExp((Box<Exp>, BinaryOp, Box<Exp>)),
 }
 
 impl<'a> ArbitraryInContext<'a> for Exp {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        let add_exp = BinaryExp::arbitrary(u, c)?;
-        Ok(Exp {
-            add_exp: Box::new(add_exp),
-        })
+        // Select a random expression type
+        match u.arbitrary::<u8>()? % 6 {
+            0 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, c)?))),
+            1 => Ok(Exp::Number(Number::arbitrary(u, c)?)),
+            2 => {
+                let op = UnaryOp::arbitrary(u)?;
+                let exp = Box::new(Exp::arbitrary(u, c)?);
+                Ok(Exp::OpUnary((op, exp)))
+            }
+            3 => {
+                let a = Box::new(Exp::arbitrary(u, c)?);
+                let b = BinaryOp::arbitrary(u)?;
+                let c = Box::new(Exp::arbitrary(u, c)?);
+                Ok(Exp::OpExp((a, b, c)))
+            }
+            4 => {
+                // Get all candidates from environment
+                let mut candidates: Vec<Self> = c.ctx.iter().filter_map(|(id, ty)| {
+                    let id = Ident::from(id.clone());
+        
+                    // If type match, directly add as candidate
+                    if *ty == c.expected_type {
+                        return Some(Ok(Exp::LVal(LVal {
+                            id,
+                            index: Index(Vec::new()),
+                        })));
+                    }
+        
+                    // If type is function, check if return type matches
+                    // If matches, add as candidate
+                    if let Type::Func(ret_type, param) = ty {
+                        if **ret_type == c.expected_type {
+                            // Map parameters to arbitrary instances of its type
+                            match param.iter().map(|x| {
+                                let mut c = c.clone();
+                                c.expected_type = x.clone();
+                                c.expected_const = false;
+                                Exp::arbitrary(u, &c)
+                            }).collect::<Result<_, _>>() {
+                                Ok(exp_vec) => return Some(Ok(Exp::FuncCall((id, 
+                                    Some(FuncRParams { exp_vec })
+                                )))),
+                                Err(err) => return Some(Err(err)),
+                            }
+                        }
+                    }
+        
+                    // If type is array, recursively check if content type matches
+                    // until content type is no longer an array
+                    let mut current_type = ty;
+                    let mut current_exp = LVal {
+                        id: id.clone(),
+                        index: Index(Vec::new()),
+                    };
+                    while let Type::Array(content_type, len) = current_type {
+                        // Generate a random index in bound
+                        // TODO refer to constant here
+                        let index = match u.arbitrary::<i32>() {
+                            Ok(i) => i,
+                            Err(err) => return Some(Err(err)),
+                        };
+    
+                        // Update current processing type and expression
+                        current_type = content_type;
+                        current_exp.index.0.push(Exp::Number(Number::IntConst(index % len)));
+                        if *current_type == c.expected_type {
+                            return Some(Ok(Exp::LVal(current_exp)));
+                        }
+                    }
+
+                    // Otherwise, it's impossible for this identifier to transform
+                    // to the expected type
+                    None
+                }).collect::<Result<_, _>>()?;
+
+                // If constant or there's no candidate, report unable to construct
+                // TODO filter constant (requires eval to return Result)
+                if c.expected_const || candidates.is_empty() {
+                    return Err(arbitrary::Error::EmptyChoose);
+                }
+                
+                // Randomly choose a candidate
+                let selected_index = u.arbitrary::<usize>()? % candidates.len();
+                Ok(candidates.swap_remove(selected_index))
+            }
+            _ => unreachable!(),
+        }
     }
 }
 
 impl Eval for Exp {
     fn eval(&self, ctx: &Context) -> Value {
-        self.add_exp.eval(ctx)
+        match self {
+            Self::Exp(a) => a.eval(ctx),
+            Self::LVal(a) => a.eval(ctx),
+            Self::Number(a) => a.eval(ctx),
+            Self::FuncCall((_, _)) => panic!("No function is constant"),
+            Self::OpUnary((op, exp)) => {
+                let exp = exp.eval(ctx);
+                match op {
+                    UnaryOp::Add => exp,
+                    UnaryOp::Minus => -exp,
+                    UnaryOp::Exclamation => {
+                        if exp == Value::Int(0) {
+                            Value::Int(1)
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
+                }
+            }
+            Self::OpExp((a, b, c)) => {
+                let a = a.eval(ctx);
+                let c = c.eval(ctx);
+                match b {
+                    BinaryOp::Add => a + c,
+                    BinaryOp::Minus => a - c,
+                    BinaryOp::Mul => a * c,
+                    BinaryOp::Div => a / c,
+                    BinaryOp::Mod => a % c,
+                    BinaryOp::Less => Value::Int(if a < c { 1 } else { 0 }),
+                    BinaryOp::LessOrEqual => Value::Int(if a <= c { 1 } else { 0 }),
+                    BinaryOp::Greater => Value::Int(if a > c { 1 } else { 0 }),
+                    BinaryOp::GreaterOrEqual => Value::Int(if a >= c { 1 } else { 0 }),
+                    BinaryOp::Equal => Value::Int(if a == c { 1 } else { 0 }),
+                    BinaryOp::NotEqual => Value::Int(if a != c { 1 } else { 0 }),
+                    BinaryOp::And => Value::Int(if a != Value::Int(0) && c != Value::Int(0) {
+                        1
+                    } else {
+                        0
+                    }),
+                    BinaryOp::Or => Value::Int(if a != Value::Int(0) || c != Value::Int(0) {
+                        1
+                    } else {
+                        0
+                    }),
+                }
+            }
+        }
     }
 }
 
 impl Display for Exp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.add_exp)
+        match self {
+            Self::Exp(a) => write!(f, "({})", a),
+            Self::LVal(a) => write!(f, "{}", a),
+            Self::Number(a) => write!(f, "{}", a),
+            Self::FuncCall((id, None)) => write!(f, "{}()", id),
+            Self::FuncCall((id, Some(param))) => write!(f, "{}({})", id, param),
+            Self::OpUnary((a, b)) => write!(f, "{}({})", a, b),
+            Self::OpExp((a, b, c)) => write!(f, "({}) {} ({})", a, b, c),
+        }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct LVal {
     pub id: Ident,
-    pub exp_vec: Vec<Exp>,
-}
-
-impl<'a> ArbitraryInContext<'a> for LVal {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        // TODO make arbitrary identifier type match
-        let id = Ident::arbitrary(u)?;
-        let exp_vec = Vec::new();
-        Ok(LVal { id, exp_vec })
-    }
+    pub index: Index,
 }
 
 impl Eval for LVal {
     fn eval(&self, ctx: &Context) -> Value {
         let mut array_type = ctx.ctx.get(&self.id.to_string()).unwrap().clone();
         let mut array_value = ctx.env.get(&self.id.to_string()).unwrap().clone();
-        for exp in &self.exp_vec {
+        for exp in &self.index.0 {
             let index_value: Value = exp.eval(ctx);
             match (array_type, array_value) {
                 (Type::Array(content_type, content_len), Value::Array(content_value)) => {
@@ -72,50 +206,8 @@ impl Display for LVal {
             f,
             "{}{}",
             self.id,
-            self.exp_vec
-                .iter()
-                .map(|a| format!("[{}]", a))
-                .collect::<Vec<_>>()
-                .join("")
+            self.index,
         )
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum PrimaryExp {
-    Exp(Box<Exp>),
-    LVal(LVal),
-    Number(Number),
-}
-
-impl<'a> ArbitraryInContext<'a> for PrimaryExp {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 3 {
-            0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c)?))),
-            1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c)?)),
-            2 => Ok(PrimaryExp::Number(Number::arbitrary(u, c)?)),
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Eval for PrimaryExp {
-    fn eval(&self, ctx: &Context) -> Value {
-        match self {
-            PrimaryExp::Exp(a) => a.eval(ctx),
-            PrimaryExp::LVal(a) => a.eval(ctx),
-            PrimaryExp::Number(a) => a.eval(ctx),
-        }
-    }
-}
-
-impl Display for PrimaryExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PrimaryExp::Exp(a) => write!(f, "{}", a),
-            PrimaryExp::LVal(a) => write!(f, "{}", a),
-            PrimaryExp::Number(a) => write!(f, "{}", a),
-        }
     }
 }
 
@@ -154,73 +246,6 @@ impl Display for Number {
 }
 
 #[derive(Debug, Clone)]
-pub enum UnaryExp {
-    PrimaryExp(Box<PrimaryExp>),
-    FuncCall((Ident, Option<FuncRParams>)),
-    OpUnary((UnaryOp, Box<UnaryExp>)),
-}
-
-impl<'a> ArbitraryInContext<'a> for UnaryExp {
-    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 3 {
-            0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c)?))),
-            1 => {
-                // TODO make sure function type match
-                let id = Ident::arbitrary(u)?;
-                let func_rparams = if u.arbitrary()? {
-                    Some(FuncRParams::arbitrary(u, c)?)
-                } else {
-                    None
-                };
-                Ok(UnaryExp::FuncCall((id, func_rparams)))
-            }
-            2 => {
-                let unary_op = UnaryOp::arbitrary(u)?;
-                let unary_exp = UnaryExp::arbitrary(u, c)?;
-                Ok(UnaryExp::OpUnary((unary_op, Box::new(unary_exp))))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Eval for UnaryExp {
-    fn eval(&self, ctx: &Context) -> Value {
-        match self {
-            UnaryExp::PrimaryExp(a) => a.eval(ctx),
-            UnaryExp::FuncCall((_, _)) => {
-                panic!("No function is constant")
-            }
-            UnaryExp::OpUnary((op, exp)) => {
-                let exp = exp.eval(ctx);
-                match op {
-                    UnaryOp::Add => exp,
-                    UnaryOp::Minus => -exp,
-                    UnaryOp::Exclamation => {
-                        if exp == Value::Int(0) {
-                            Value::Int(1)
-                        } else {
-                            Value::Int(0)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl Display for UnaryExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            UnaryExp::PrimaryExp(a) => write!(f, "{}", a),
-            UnaryExp::FuncCall((id, None)) => write!(f, "{}()", id),
-            UnaryExp::FuncCall((id, Some(param))) => write!(f, "{}({})", id, param),
-            UnaryExp::OpUnary((a, b)) => write!(f, "{}({})", a, b),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Add,
     Minus,
@@ -251,20 +276,6 @@ impl Display for UnaryOp {
 #[derive(Debug, Clone)]
 pub struct FuncRParams {
     pub exp_vec: Vec<Exp>,
-}
-
-impl<'a> ArbitraryInContext<'a> for FuncRParams {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        let mut exp_vec = Vec::new();
-        loop {
-            // TODO make param type match
-            let exp = Exp::arbitrary(u, c)?;
-            exp_vec.push(exp);
-            if u.arbitrary()? {
-                return Ok(FuncRParams { exp_vec });
-            }
-        }
-    }
 }
 
 impl Display for FuncRParams {
@@ -335,71 +346,6 @@ impl Display for BinaryOp {
             BinaryOp::NotEqual => write!(f, "!="),
             BinaryOp::And => write!(f, "&&"),
             BinaryOp::Or => write!(f, "||"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum BinaryExp {
-    UnaryExp(Box<UnaryExp>),
-    OpExp((Box<BinaryExp>, BinaryOp, UnaryExp)),
-}
-
-impl<'a> ArbitraryInContext<'a> for BinaryExp {
-    fn arbitrary(u: &mut Unstructured<'a>, ctx: &Context) -> Result<Self> {
-        match u.arbitrary::<u8>()? % 2 {
-            0 => Ok(BinaryExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, ctx)?))),
-            1 => {
-                let a = BinaryExp::arbitrary(u, ctx)?;
-                let b = BinaryOp::arbitrary(u)?;
-                let c = UnaryExp::arbitrary(u, ctx)?;
-                Ok(BinaryExp::OpExp((Box::new(a), b, c)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Eval for BinaryExp {
-    fn eval(&self, ctx: &Context) -> Value {
-        match self {
-            Self::UnaryExp(a) => a.eval(ctx),
-            Self::OpExp((a, b, c)) => {
-                let a = a.eval(ctx);
-                let c = c.eval(ctx);
-                match b {
-                    BinaryOp::Add => a + c,
-                    BinaryOp::Minus => a - c,
-                    BinaryOp::Mul => a * c,
-                    BinaryOp::Div => a / c,
-                    BinaryOp::Mod => a % c,
-                    BinaryOp::Less => Value::Int(if a < c { 1 } else { 0 }),
-                    BinaryOp::LessOrEqual => Value::Int(if a <= c { 1 } else { 0 }),
-                    BinaryOp::Greater => Value::Int(if a > c { 1 } else { 0 }),
-                    BinaryOp::GreaterOrEqual => Value::Int(if a >= c { 1 } else { 0 }),
-                    BinaryOp::Equal => Value::Int(if a == c { 1 } else { 0 }),
-                    BinaryOp::NotEqual => Value::Int(if a != c { 1 } else { 0 }),
-                    BinaryOp::And => Value::Int(if a != Value::Int(0) && c != Value::Int(0) {
-                        1
-                    } else {
-                        0
-                    }),
-                    BinaryOp::Or => Value::Int(if a != Value::Int(0) || c != Value::Int(0) {
-                        1
-                    } else {
-                        0
-                    }),
-                }
-            }
-        }
-    }
-}
-
-impl Display for BinaryExp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnaryExp(a) => write!(f, "{}", a),
-            Self::OpExp((a, b, c)) => write!(f, "({}) {} ({})", a, b, c),
         }
     }
 }

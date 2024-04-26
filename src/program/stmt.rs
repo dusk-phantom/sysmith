@@ -99,6 +99,7 @@ impl<'a> ArbitraryInContext<'a> for Stmt {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         if c.in_loop {
             // Generate a random statement including break and continue
+            // TODO retry if the last one fails
             match u.arbitrary::<u8>()? % 8 {
                 0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
                 1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
@@ -148,17 +149,51 @@ pub struct Assign {
 
 impl<'a> ArbitraryInContext<'a> for Assign {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        // Randomly find a variable in context
-        // TODO ensure such variable exists
-        let lval = LVal::arbitrary(u, c)?;
+        // Filter number or array left values from context
+        let mut candidates: Vec<(LVal, Type)> = c.ctx.iter().filter_map(|(id, ty)| {
+            let mut current_type = ty.clone();
+            let mut current_lval = LVal {
+                id: id.clone().into(),
+                index: Index(Vec::new()),
+            };
+
+            // Collapse array type, 
+            // did not allow assigning an array to another
+            while let Type::Array(t, _) = current_type {
+                // Generate a random index in bound
+                // TODO refer to constant here
+                let index = match u.arbitrary::<i32>() {
+                    Ok(i) => i,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                current_type = *t;
+                current_lval.index.0.push(Exp::Number(Number::IntConst(index)));
+            }
+
+            // Only accept int or float type as left value,
+            // void or function will be rejected
+            match current_type {
+                Type::Int | Type::Float => Some(Ok((current_lval, current_type))),
+                _ => None
+            }
+        }).collect::<Result<_, >>()?;
+
+        // If there's no candidate, return an error
+        if candidates.is_empty() {
+            return Err(arbitrary::Error::EmptyChoose);
+        }
+                
+        // Randomly choose a candidate
+        let selected_index = u.arbitrary::<usize>()? % candidates.len();
+        let (lval, ty) = candidates.swap_remove(selected_index);
 
         // Initialize a new context with expected type `ty`
         let mut c = c.clone();
-        c.expected_type = Type::Int;
+        c.expected_type = ty.clone();
         c.expected_const = false;
 
         // Generate a expression of matching type
-        // Can be generated because `c = c` is possible
         let exp = Exp::arbitrary(u, &c)?;
         Ok(Assign { lval, exp })
     }
@@ -187,7 +222,11 @@ impl<'a> ArbitraryInContext<'a> for ExpStmt {
             c.expected_const = false;
 
             // Generate a random statement of this type (non-constant)
-            Some(Exp::arbitrary(u, &c)?)
+            // If fail, just return None instead of error
+            match Exp::arbitrary(u, &c) {
+                Ok(e) => Some(e),
+                Err(_) => None,
+            }
         } else {
             // Possible to generate a stray semicolon
             None

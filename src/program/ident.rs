@@ -26,6 +26,16 @@ where
 #[derive(Debug, Clone, Arbitrary)]
 pub struct Ident(PVec<IdentChar>);
 
+impl From<String> for Ident {
+    fn from(s: String) -> Self {
+        let v = s
+            .chars()
+            .map(|c| IdentChar(c as u8))
+            .collect::<Vec<IdentChar>>();
+        Ident(PVec(v))
+    }
+}
+
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id: Vec<u8> = self.0.iter().map(|x| x.0).collect();
