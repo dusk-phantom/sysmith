@@ -92,6 +92,7 @@ impl FuncFParam {
     fn to_type(&self, c: &Context) -> Type {
         match self {
             FuncFParam::NonArray((a, _)) => a.clone().into(),
+            // FIXME: this is a pointer
             FuncFParam::Array((a, _, b)) => b.apply(a.clone().into(), c),
         }
     }
