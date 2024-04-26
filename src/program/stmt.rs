@@ -7,13 +7,13 @@ pub struct Block {
     pub block_vec: Vec<BlockItem>,
 }
 
-impl<'a> ArbitraryInContext<'a> for Block {
+impl<'a> ArbitraryIn<'a, Context> for Block {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut block_vec = Vec::new();
         let mut local_context = c.clone();
 
         // Generate zero or more predecessing block items
-        loop {
+        for _ in 0..MAX_VEC_LEN {
             if u.arbitrary()? {
                 break;
             }
@@ -58,7 +58,7 @@ impl Resolve for BlockItem {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for BlockItem {
+impl<'a> ArbitraryIn<'a, Context> for BlockItem {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate declaration or statement at random
         match u.int_in_range(0..=1)? {
@@ -97,15 +97,22 @@ impl Resolve for Stmt {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for Stmt {
+impl<'a> ArbitraryIn<'a, Context> for Stmt {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+        // Increase depth of context, converge if depth exceeds
+        let mut c = c.clone();
+        c.depth += 1;
+        if c.depth > MAX_DEPTH {
+            return Ok(Stmt::Block(Block { block_vec: Vec::new() }));
+        }
+
         // Generate a random statement including break and continue
         random_retry! { size = 8, bytes = u;
-            0 => Ok(Stmt::Assign(Assign::arbitrary(u, c)?)),
-            1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, c)?)),
-            2 => Ok(Stmt::Block(Block::arbitrary(u, c)?)),
-            3 => Ok(Stmt::If(Box::new(If::arbitrary(u, c)?))),
-            4 => Ok(Stmt::While(Box::new(While::arbitrary(u, c)?))),
+            0 => Ok(Stmt::Assign(Assign::arbitrary(u, &c)?)),
+            1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, &c)?)),
+            2 => Ok(Stmt::Block(Block::arbitrary(u, &c)?)),
+            3 => Ok(Stmt::If(Box::new(If::arbitrary(u, &c)?))),
+            4 => Ok(Stmt::While(Box::new(While::arbitrary(u, &c)?))),
             5 => {
                 // Prevent break outside of loop
                 if !c.in_loop {
@@ -121,7 +128,7 @@ impl<'a> ArbitraryInContext<'a> for Stmt {
                 Ok(Stmt::Continue(Continue))
             },
             // Safety: return type is numeric, so it can't fail
-            7 => Ok(Stmt::Return(Return::arbitrary(u, c)?)),
+            7 => Ok(Stmt::Return(Return::arbitrary(u, &c)?)),
         }
     }
 }
@@ -147,7 +154,7 @@ pub struct Assign {
     pub exp: Exp,
 }
 
-impl<'a> ArbitraryInContext<'a> for Assign {
+impl<'a> ArbitraryIn<'a, Context> for Assign {
     /// Safety: if there's nothing in context, this function will fail
     /// Error should be handled manually
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
@@ -213,7 +220,7 @@ pub struct ExpStmt {
     pub exp: Option<Exp>,
 }
 
-impl<'a> ArbitraryInContext<'a> for ExpStmt {
+impl<'a> ArbitraryIn<'a, Context> for ExpStmt {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
             // Generate a random type for this expression
@@ -255,7 +262,7 @@ pub struct If {
     pub else_then: Option<Stmt>,
 }
 
-impl<'a> ArbitraryInContext<'a> for If {
+impl<'a> ArbitraryIn<'a, Context> for If {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
         // Safety: expected type is int so it can't fail
@@ -295,7 +302,7 @@ pub struct While {
     pub body: Stmt,
 }
 
-impl<'a> ArbitraryInContext<'a> for While {
+impl<'a> ArbitraryIn<'a, Context> for While {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
         // Safety: expected type is int so it can't fail
@@ -340,7 +347,7 @@ pub struct Return {
     pub exp: Option<Exp>,
 }
 
-impl<'a> ArbitraryInContext<'a> for Return {
+impl<'a> ArbitraryIn<'a, Context> for Return {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let exp = if u.arbitrary()? {
             // Context for returned expression expects return type

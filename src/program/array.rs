@@ -3,13 +3,13 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct Index(pub Vec<Exp>);
 
-impl<'a> ArbitraryInContext<'a> for Index {
+impl<'a> ArbitraryIn<'a, Context> for Index {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut index = Vec::new();
-        loop {
+        for _ in 0..MAX_VEC_LEN {
             // Create zero or more array indicies
             if u.arbitrary()? {
-                return Ok(Index(index));
+                break;
             }
 
             // Initialize a context expecting `const int`
@@ -22,6 +22,7 @@ impl<'a> ArbitraryInContext<'a> for Index {
             let exp = Exp::arbitrary(u, &c)?;
             index.push(exp);
         }
+        Ok(Index(index))
     }
 }
 

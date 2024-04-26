@@ -18,7 +18,7 @@ impl Resolve for FuncDef {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for FuncDef {
+impl<'a> ArbitraryIn<'a, Context> for FuncDef {
     fn arbitrary(u: &mut Unstructured<'a>, ctx: &Context) -> Result<Self> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
@@ -53,17 +53,18 @@ pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
 }
 
-impl<'a> ArbitraryInContext<'a> for FuncFParams {
+impl<'a> ArbitraryIn<'a, Context> for FuncFParams {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut func_fparams_vec = Vec::new();
-        loop {
+        for _ in 0..MAX_VEC_LEN {
             // Generate zero or more function params
             if u.arbitrary()? {
-                return Ok(FuncFParams { func_fparams_vec });
+                break;
             }
             let func_fparam = FuncFParam::arbitrary(u, c)?;
             func_fparams_vec.push(func_fparam);
         }
+        Ok(FuncFParams { func_fparams_vec })
     }
 }
 
@@ -98,7 +99,7 @@ impl FuncFParam {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for FuncFParam {
+impl<'a> ArbitraryIn<'a, Context> for FuncFParam {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate array (x: int[][4]) or non-array (x: int) function parameter
         match u.int_in_range(0..=1)? {
