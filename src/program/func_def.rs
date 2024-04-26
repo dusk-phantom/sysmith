@@ -101,7 +101,7 @@ impl FuncFParam {
 impl<'a> ArbitraryInContext<'a> for FuncFParam {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate array (x: int[][4]) or non-array (x: int) function parameter
-        match u.arbitrary::<u8>()? % 2 {
+        match u.int_in_range(0..=1)? {
             0 => {
                 // Generate signature
                 let btype = BType::arbitrary(u)?;
