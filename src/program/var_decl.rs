@@ -1,28 +1,25 @@
 use super::*;
 
 #[derive(Debug, Clone)]
-pub enum Decl {
-    VarDecl(VarDecl),
-}
-
-impl<'a> ArbitraryInContext<'a> for Decl {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
-        Ok(Decl::VarDecl(VarDecl::arbitrary(u, c)?))
-    }
-}
-
-impl Display for Decl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Decl::VarDecl(a) => write!(f, "{}", a),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct VarDecl {
     pub btype: BType,
-    pub const_def_vec: PVec<VarDef>,
+    pub def_vec: PVec<VarDef>,
+}
+
+impl Resolve for VarDecl {
+    fn resolve(&self, ctx: &mut Context) {
+        for def in self.def_vec.iter() {
+            // Add to context
+            let var_type = def.index.apply(self.btype.clone().into(), ctx);
+            ctx.ctx.insert(def.ident.to_string(), var_type);
+
+            // Add to env if constant
+            if ctx.expected_const {
+                let val = def.init_val.eval(ctx);
+                ctx.env.insert(def.ident.to_string(), val);
+            }
+        }
+    }
 }
 
 impl<'a> ArbitraryInContext<'a> for VarDecl {
@@ -44,7 +41,7 @@ impl<'a> ArbitraryInContext<'a> for VarDecl {
             if u.arbitrary()? {
                 return Ok(VarDecl {
                     btype,
-                    const_def_vec: PVec(const_def_vec),
+                    def_vec: PVec(const_def_vec),
                 });
             }
         }
@@ -57,7 +54,7 @@ impl Display for VarDecl {
             f,
             "const {} {};",
             self.btype,
-            self.const_def_vec
+            self.def_vec
                 .iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>()

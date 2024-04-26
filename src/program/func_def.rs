@@ -5,19 +5,32 @@ pub enum FuncDef {
     ParameterFuncDef((FuncType, Ident, FuncFParams, Block)),
 }
 
+impl Resolve for FuncDef {
+    fn resolve(&self, ctx: &mut Context) {
+        match self {
+            FuncDef::ParameterFuncDef((a, b, c, _)) => {
+                ctx.ctx.insert(b.to_string(), Type::Func(
+                    Box::new(a.clone().into()), 
+                    c.func_fparams_vec.iter().map(|x| x.to_type(ctx)).collect(),
+                ));
+            }
+        }
+    }
+}
+
 impl<'a> ArbitraryInContext<'a> for FuncDef {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+    fn arbitrary(u: &mut Unstructured<'a>, ctx: &Context) -> Result<Self> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
         let ident = Ident::arbitrary(u)?;
-        let func_fparams = FuncFParams::arbitrary(u, c)?;
+        let func_fparams = FuncFParams::arbitrary(u, ctx)?;
 
         // Initialize a context expecting return type `func_type`
-        let mut c = c.clone();
-        c.return_type = func_type.clone().into();
+        let mut ctx = ctx.clone();
+        ctx.return_type = func_type.clone().into();
 
         // Generate function statements with return type specified
-        let block = Block::arbitrary(u, &c)?;
+        let block = Block::arbitrary(u, &ctx)?;
         Ok(FuncDef::ParameterFuncDef((
             func_type,
             ident,
@@ -72,6 +85,16 @@ impl Display for FuncFParams {
 pub enum FuncFParam {
     NonArray((BType, Ident)),
     Array((BType, Ident, Index)),
+}
+
+impl FuncFParam {
+    /// Convert a function parameter to a type
+    fn to_type(&self, c: &Context) -> Type {
+        match self {
+            FuncFParam::NonArray((a, _)) => a.clone().into(),
+            FuncFParam::Array((a, _, b)) => b.apply(a.clone().into(), c),
+        }
+    }
 }
 
 impl<'a> ArbitraryInContext<'a> for FuncFParam {
