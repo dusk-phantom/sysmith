@@ -3,8 +3,8 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct Index(Vec<Exp>);
 
-impl Index {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for Index {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut index = Vec::new();
         loop {
             // Create zero or more array indicies
@@ -22,7 +22,9 @@ impl Index {
             index.push(exp);
         }
     }
+}
 
+impl Index {
     pub fn apply(&self, mut base_type: Type, c: &Context) -> Type {
         // Apply the array index to the base type
         // Reverse order: int x[2][8] -> [[int x 8] x 2]

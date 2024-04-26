@@ -5,15 +5,17 @@ pub struct Exp {
     pub add_exp: Box<BinaryExp>,
 }
 
-impl Exp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for Exp {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let add_exp = BinaryExp::arbitrary(u, c)?;
         Ok(Exp {
             add_exp: Box::new(add_exp),
         })
     }
+}
 
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for Exp {
+    fn eval(&self, ctx: &Context) -> Value {
         self.add_exp.eval(ctx)
     }
 }
@@ -30,22 +32,17 @@ pub struct LVal {
     pub exp_vec: Vec<Exp>,
 }
 
-impl LVal {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for LVal {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // TODO make arbitrary identifier type match
         let id = Ident::arbitrary(u)?;
         let exp_vec = Vec::new();
         Ok(LVal { id, exp_vec })
     }
+}
 
-    pub fn arbitrary_infer(u: &mut Unstructured, c: &Context) -> Result<(Self, Type)> {
-        // TODO make arbitrary identifier type match
-        let id = Ident::arbitrary(u)?;
-        let exp_vec = Vec::new();
-        Ok((LVal { id, exp_vec }, Type::Int))
-    }
-
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for LVal {
+    fn eval(&self, ctx: &Context) -> Value {
         let mut array_type = ctx.ctx.get(&self.id.to_string()).unwrap().clone();
         let mut array_value = ctx.env.get(&self.id.to_string()).unwrap().clone();
         for exp in &self.exp_vec {
@@ -91,8 +88,8 @@ pub enum PrimaryExp {
     Number(Number),
 }
 
-impl PrimaryExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for PrimaryExp {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(PrimaryExp::Exp(Box::new(Exp::arbitrary(u, c)?))),
             1 => Ok(PrimaryExp::LVal(LVal::arbitrary(u, c)?)),
@@ -100,8 +97,10 @@ impl PrimaryExp {
             _ => unreachable!(),
         }
     }
+}
 
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for PrimaryExp {
+    fn eval(&self, ctx: &Context) -> Value {
         match self {
             PrimaryExp::Exp(a) => a.eval(ctx),
             PrimaryExp::LVal(a) => a.eval(ctx),
@@ -126,16 +125,18 @@ pub enum Number {
     FloatConst(FloatConst),
 }
 
-impl Number {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for Number {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         match c.expected_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             Type::Float => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
             _ => panic!("Invalid type for a number literal"),
         }
     }
+}
 
-    pub fn eval(&self, _: &Context) -> Value {
+impl Eval for Number {
+    fn eval(&self, _: &Context) -> Value {
         match self {
             Number::IntConst(a) => Value::Int(*a),
             Number::FloatConst(a) => Value::Float(*a),
@@ -159,8 +160,8 @@ pub enum UnaryExp {
     OpUnary((UnaryOp, Box<UnaryExp>)),
 }
 
-impl UnaryExp {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for UnaryExp {
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(UnaryExp::PrimaryExp(Box::new(PrimaryExp::arbitrary(u, c)?))),
             1 => {
@@ -181,8 +182,10 @@ impl UnaryExp {
             _ => unreachable!(),
         }
     }
+}
 
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for UnaryExp {
+    fn eval(&self, ctx: &Context) -> Value {
         match self {
             UnaryExp::PrimaryExp(a) => a.eval(ctx),
             UnaryExp::FuncCall((_, _)) => {
@@ -193,11 +196,13 @@ impl UnaryExp {
                 match op {
                     UnaryOp::Add => exp,
                     UnaryOp::Minus => -exp,
-                    UnaryOp::Exclamation => if exp == Value::Int(0) {
-                        Value::Int(1)
-                    } else {
-                        Value::Int(0)
-                    },
+                    UnaryOp::Exclamation => {
+                        if exp == Value::Int(0) {
+                            Value::Int(1)
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
                 }
             }
         }
@@ -222,8 +227,8 @@ pub enum UnaryOp {
     Exclamation,
 }
 
-impl UnaryOp {
-    pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+impl<'a> Arbitrary<'a> for UnaryOp {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         match u.arbitrary::<u8>()? % 3 {
             0 => Ok(UnaryOp::Add),
             1 => Ok(UnaryOp::Minus),
@@ -248,8 +253,8 @@ pub struct FuncRParams {
     pub exp_vec: Vec<Exp>,
 }
 
-impl FuncRParams {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for FuncRParams {
+    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         let mut exp_vec = Vec::new();
         loop {
             // TODO make param type match
@@ -293,8 +298,8 @@ pub enum BinaryOp {
     Or,
 }
 
-impl BinaryOp {
-    pub fn arbitrary(u: &mut Unstructured) -> Result<Self> {
+impl<'a> Arbitrary<'a> for BinaryOp {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         match u.arbitrary::<u8>()? % 13 {
             0 => Ok(BinaryOp::Add),
             1 => Ok(BinaryOp::Minus),
@@ -340,8 +345,8 @@ pub enum BinaryExp {
     OpExp((Box<BinaryExp>, BinaryOp, UnaryExp)),
 }
 
-impl BinaryExp {
-    pub fn arbitrary(u: &mut Unstructured, ctx: &Context) -> Result<Self> {
+impl<'a> ArbitraryInContext<'a> for BinaryExp {
+    fn arbitrary(u: &mut Unstructured<'a>, ctx: &Context) -> Result<Self> {
         match u.arbitrary::<u8>()? % 2 {
             0 => Ok(BinaryExp::UnaryExp(Box::new(UnaryExp::arbitrary(u, ctx)?))),
             1 => {
@@ -353,8 +358,10 @@ impl BinaryExp {
             _ => unreachable!(),
         }
     }
+}
 
-    pub fn eval(&self, ctx: &Context) -> Value {
+impl Eval for BinaryExp {
+    fn eval(&self, ctx: &Context) -> Value {
         match self {
             Self::UnaryExp(a) => a.eval(ctx),
             Self::OpExp((a, b, c)) => {
@@ -372,8 +379,16 @@ impl BinaryExp {
                     BinaryOp::GreaterOrEqual => Value::Int(if a >= c { 1 } else { 0 }),
                     BinaryOp::Equal => Value::Int(if a == c { 1 } else { 0 }),
                     BinaryOp::NotEqual => Value::Int(if a != c { 1 } else { 0 }),
-                    BinaryOp::And => Value::Int(if a != Value::Int(0) && c != Value::Int(0) { 1 } else { 0 }),
-                    BinaryOp::Or => Value::Int(if a != Value::Int(0) || c != Value::Int(0) { 1 } else { 0 }),
+                    BinaryOp::And => Value::Int(if a != Value::Int(0) && c != Value::Int(0) {
+                        1
+                    } else {
+                        0
+                    }),
+                    BinaryOp::Or => Value::Int(if a != Value::Int(0) || c != Value::Int(0) {
+                        1
+                    } else {
+                        0
+                    }),
                 }
             }
         }

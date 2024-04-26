@@ -111,5 +111,5 @@ impl PartialOrd for Value {
             (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f32)),
             _ => panic!("Cannot compare an array"),
         }
-    } 
+    }
 }
