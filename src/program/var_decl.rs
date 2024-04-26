@@ -22,7 +22,7 @@ impl Resolve for VarDecl {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for VarDecl {
+impl<'a> ArbitraryIn<'a, Context> for VarDecl {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate a random basic type and constant flag
         let btype = BType::arbitrary(u)?;
@@ -35,16 +35,17 @@ impl<'a> ArbitraryInContext<'a> for VarDecl {
 
         // Generate at lease one definition
         let mut const_def_vec = Vec::new();
-        loop {
+        for _ in 0..MAX_VEC_LEN {
             let const_def = VarDef::arbitrary(u, &c)?;
             const_def_vec.push(const_def);
             if u.arbitrary()? {
-                return Ok(VarDecl {
-                    btype,
-                    def_vec: PVec(const_def_vec),
-                });
+                break;
             }
         }
+        Ok(VarDecl {
+            btype,
+            def_vec: PVec(const_def_vec),
+        })
     }
 }
 
@@ -70,7 +71,7 @@ pub struct VarDef {
     pub init_val: VarInitVal,
 }
 
-impl<'a> ArbitraryInContext<'a> for VarDef {
+impl<'a> ArbitraryIn<'a, Context> for VarDef {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate a random identifier for this definition
         let ident = Ident::arbitrary(u)?;
@@ -105,7 +106,7 @@ pub enum VarInitVal {
     InitValVec(Vec<VarInitVal>),
 }
 
-impl<'a> ArbitraryInContext<'a> for VarInitVal {
+impl<'a> ArbitraryIn<'a, Context> for VarInitVal {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         match c.expected_type.clone() {
             Type::Int | Type::Float => {

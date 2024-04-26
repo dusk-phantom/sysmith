@@ -12,10 +12,20 @@ pub enum Exp {
     OpExp((Box<Exp>, BinaryOp, Box<Exp>)),
 }
 
-impl<'a> ArbitraryInContext<'a> for Exp {
+impl<'a> ArbitraryIn<'a, Context> for Exp {
     /// Safety: if expected type is not numeric, it can possibly fail.
     /// The failure should be handled manually.
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+        // Increase depth of context, converge if depth exceeds
+        let mut c = c.clone();
+        c.depth += 1;
+        if c.depth > MAX_DEPTH {
+            if !c.expected_type.is_numeric() {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+            return Ok(Exp::Number(Number::arbitrary(u, &c)?));
+        }
+
         // Select a random expression type.
         // Only function argument will demand non-numeric type,
         // so this function guarantees to succeed
@@ -26,7 +36,7 @@ impl<'a> ArbitraryInContext<'a> for Exp {
                 if c.expected_const {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
-                
+
                 // Get all candidates from environment
                 let mut candidates: Vec<Self> = c.ctx.iter().filter_map(|(id, ty)| {
                     let id = Ident::from(id.clone());
@@ -95,14 +105,14 @@ impl<'a> ArbitraryInContext<'a> for Exp {
                 let selected_index = u.arbitrary::<usize>()? % candidates.len();
                 Ok(candidates.swap_remove(selected_index))
             },
-            1 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, c)?))),
+            1 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, &c)?))),
             2 => {
                 // Expected type must be numeric to generate unary expression
                 if !c.expected_type.is_numeric() {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
                 let op = UnaryOp::arbitrary(u)?;
-                let exp = Box::new(Exp::arbitrary(u, c)?);
+                let exp = Box::new(Exp::arbitrary(u, &c)?);
                 Ok(Exp::OpUnary((op, exp)))
             },
             3 => {
@@ -110,9 +120,9 @@ impl<'a> ArbitraryInContext<'a> for Exp {
                 if !c.expected_type.is_numeric() {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
-                let a = Box::new(Exp::arbitrary(u, c)?);
+                let a = Box::new(Exp::arbitrary(u, &c)?);
                 let b = BinaryOp::arbitrary(u)?;
-                let c = Box::new(Exp::arbitrary(u, c)?);
+                let c = Box::new(Exp::arbitrary(u, &c)?);
                 Ok(Exp::OpExp((a, b, c)))
             },
             4 => {
@@ -121,7 +131,7 @@ impl<'a> ArbitraryInContext<'a> for Exp {
                 if !c.expected_type.is_numeric() {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
-                Ok(Exp::Number(Number::arbitrary(u, c)?))
+                Ok(Exp::Number(Number::arbitrary(u, &c)?))
             },
         }
     }
@@ -242,7 +252,7 @@ pub enum Number {
     FloatConst(FloatConst),
 }
 
-impl<'a> ArbitraryInContext<'a> for Number {
+impl<'a> ArbitraryIn<'a, Context> for Number {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         match c.expected_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),

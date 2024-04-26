@@ -17,17 +17,19 @@ impl<'a> Arbitrary<'a> for CompUnit {
             expected_const: false,
             return_type: Type::Void,
             in_loop: false,
+            depth: 0,
         };
 
         // Generate at least one global item
-        loop {
+        for _ in 0..MAX_VEC_LEN {
             let item = GlobalItems::arbitrary(u, &context)?;
             item.resolve(&mut context);
             global_items.push(item);
             if u.arbitrary()? {
-                return Ok(CompUnit { global_items });
+                break;
             }
         }
+        Ok(CompUnit { global_items })
     }
 }
 
@@ -60,7 +62,7 @@ impl Resolve for GlobalItems {
     }
 }
 
-impl<'a> ArbitraryInContext<'a> for GlobalItems {
+impl<'a> ArbitraryIn<'a, Context> for GlobalItems {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Generate variable or function at random
         match u.int_in_range(0..=1)? {

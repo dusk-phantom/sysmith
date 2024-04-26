@@ -20,4 +20,7 @@ pub struct Context {
 
     /// Flag if the current context is in a loop
     pub in_loop: bool,
+
+    /// Current AST depth
+    pub depth: i32,
 }
