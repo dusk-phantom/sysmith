@@ -27,14 +27,19 @@ pub struct VarDecl {
 
 impl VarDecl {
     pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
-        // Generate a random basic type
+        // Generate a random basic type and constant flag
         let btype = BType::arbitrary(u)?;
+        let is_const = u.arbitrary()?;
+
+        // Initialize context
+        let mut c = c.clone();
+        c.expected_type = btype.clone().into();
+        c.expected_const = is_const;
 
         // Generate at lease one definition
         let mut const_def_vec = Vec::new();
         loop {
-            let is_const = u.arbitrary()?;
-            let const_def = VarDef::arbitrary(u, c, btype.clone().into(), is_const)?;
+            let const_def = VarDef::arbitrary(u, &c)?;
             const_def_vec.push(const_def);
             if u.arbitrary()? {
                 return Ok(VarDecl {
@@ -69,18 +74,17 @@ pub struct VarDef {
 }
 
 impl VarDef {
-    pub fn arbitrary(u: &mut Unstructured, c: &Context, base_type: Type, is_const: bool) -> Result<Self> {
+    pub fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Self> {
         // Generate a random identifier for this definition
         let ident = Ident::arbitrary(u)?;
 
         // Generate random array type
         let index = Index::arbitrary(u, c)?;
-        let var_type = index.apply(base_type, c);
+        let var_type = index.apply(c.expected_type.clone(), c);
 
-        // Generate assigned value
+        // Generate assigned value in context with expected type revised
         let mut c: Context = c.clone();
         c.expected_type = var_type.clone();
-        c.expected_const = is_const;
         let init_val = VarInitVal::arbitrary(u, &c)?;
 
         // Return the variable definition
