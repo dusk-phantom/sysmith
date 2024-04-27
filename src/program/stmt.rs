@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -152,64 +154,86 @@ pub struct Assign {
 }
 
 #[derive(Debug, Clone)]
-struct AssignContext<'a>(&'a Context);
+struct SingleAssignContext<'a> {
+    ctx: &'a Context,
+    id: Ident,
+    ty: Type,
+}
 
-impl<'a> ArbitraryTo<'a, Stmt> for AssignContext<'_> {
-    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
-        // Filter number or array left values from context
-        let mut candidates: Vec<(LVal, Type)> = self
-            .0.ctx
-            .iter()
-            .filter_map(|(id, ty)| {
-                let mut current_type = ty.clone();
-                let mut current_lval = LVal {
-                    id: id.clone().into(),
-                    index: Index(Vec::new()),
-                };
+impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
+    fn can_arbitrary(&self, _: std::marker::PhantomData<Stmt>) -> bool {
+        let mut current_type = self.ty.clone();
 
-                // Collapse array type,
-                // did not allow assigning an array to another
-                while let Type::Array(t, len) = current_type {
-                    // Generate a random index in bound
-                    // TODO refer to constant here
-                    let index = match u.int_in_range(0..=len - 1) {
-                        Ok(i) => i,
-                        Err(err) => return Some(Err(err)),
-                    };
-
-                    current_type = *t;
-                    current_lval
-                        .index
-                        .0
-                        .push(Exp::Number(Number::IntConst(index)));
-                }
-
-                // Only accept int or float type as left value,
-                // void or function will be rejected
-                match current_type {
-                    Type::Int | Type::Float => Some(Ok((current_lval, current_type))),
-                    _ => None,
-                }
-            })
-            .collect::<Result<_>>()?;
-
-        // If there's no candidate, return an error
-        if candidates.is_empty() {
-            return Err(arbitrary::Error::EmptyChoose);
+        // Collapse array type,
+        // did not allow assigning an array to another
+        while let Type::Array(t, _) = current_type {
+            current_type = *t;
         }
 
-        // Randomly choose a candidate
-        let selected_index = u.arbitrary::<usize>()? % candidates.len();
-        let (lval, ty) = candidates.swap_remove(selected_index);
+        // Only accept int or float type as left value,
+        // void or function will be rejected
+        matches!(current_type, Type::Int | Type::Float)
+    }
+
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
+        let mut ty = self.ty.clone();
+        let mut lval = LVal {
+            id: self.id.clone(),
+            index: Index(Vec::new()),
+        };
+
+        // Collapse array type,
+        // did not allow assigning an array to another
+        while let Type::Array(t, len) = ty {
+            // Generate a random index in bound
+            // TODO refer to constant here
+            let index = u.int_in_range(0..=len - 1)?;
+
+            // Advance type and lval
+            ty = *t;
+            lval
+                .index
+                .0
+                .push(Exp::Number(Number::IntConst(index)));
+        }
 
         // Initialize a new context with expected type `ty`
-        let mut c = self.0.clone();
+        let mut c = self.ctx.clone();
         c.expected_type = ty.clone();
         c.expected_const = false;
 
         // Generate a expression of matching type
+        // As assigned variable is always int or float, this will not fail
+        // TODO support assignment to array?
         let exp = c.arbitrary(u)?;
         Ok(Stmt::Assign(Assign { lval, exp }))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AssignContext<'a>(&'a Context);
+
+impl<'a> ArbitraryTo<'a, Stmt> for AssignContext<'_> {
+    fn can_arbitrary(&self, _: PhantomData<Stmt>) -> bool {
+        let contexts: Vec<_> = self.0.ctx.iter().map(|(id, ty)| {
+            Box::new(SingleAssignContext {
+                ctx: self.0,
+                id: id.clone().into(),
+                ty: ty.clone(),
+            }) as Box<dyn ArbitraryTo<Stmt>>
+        }).collect();
+        can_arbitrary_any(contexts.as_slice())
+    }
+
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
+        let contexts: Vec<_> = self.0.ctx.iter().map(|(id, ty)| {
+            Box::new(SingleAssignContext {
+                ctx: self.0,
+                id: id.clone().into(),
+                ty: ty.clone(),
+            }) as Box<dyn ArbitraryTo<Stmt>>
+        }).collect();
+        arbitrary_any(u, contexts.as_slice())
     }
 }
 
