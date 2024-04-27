@@ -11,8 +11,6 @@ pub enum Exp {
 }
 
 impl<'a> ArbitraryIn<'a, Context> for Exp {
-    /// Safety: if expected type is not numeric, it can possibly fail.
-    /// The failure should be handled manually.
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Increase depth of context, converge if depth exceeds
         let mut c = c.clone();
@@ -139,7 +137,6 @@ impl<'a> ArbitraryIn<'a, Context> for Exp {
             }
             4 => {
                 // Expected type must be numeric to generate number
-                // Safety: this can generate a constant number
                 if !c.expected_type.is_numeric() {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
@@ -391,4 +388,3 @@ impl Display for BinaryOp {
         }
     }
 }
-

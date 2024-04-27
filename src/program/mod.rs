@@ -16,9 +16,6 @@ pub mod value;
 pub mod value_type;
 pub mod var_decl;
 
-#[macro_use]
-mod macros;
-
 pub use array::*;
 pub use comp_unit::*;
 pub use context::*;
@@ -33,3 +30,4 @@ pub use var_decl::*;
 
 pub const MAX_VEC_LEN: i32 = 10;
 pub const MAX_DEPTH: i32 = 10;
+
