@@ -19,7 +19,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         if self.ctx.expected_const {
             return false;
         }
-        
+
         // If type match, using this variable is OK
         if self.ty == self.ctx.expected_type {
             return true;
@@ -103,14 +103,14 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         while let Type::Array(content_type, len) = current_type {
             // Generate a random index in bound
             // TODO refer to constant here
-            let index = u.arbitrary::<i32>()?;
+            let index = u.int_in_range(0..=len - 1)?;
 
             // Update current processing type and expression
             current_type = content_type;
             current_exp
                 .index
                 .0
-                .push(Exp::Number(Number::IntConst(index % len)));
+                .push(Exp::Number(Number::IntConst(index)));
             if *current_type == c.expected_type {
                 return Ok(Exp::LVal(current_exp));
             }
