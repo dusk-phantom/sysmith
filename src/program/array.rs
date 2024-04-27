@@ -3,8 +3,8 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct Index(pub Vec<Exp>);
 
-impl<'a> ArbitraryIn<'a, Context> for Index {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, Index> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Index> {
         let mut index = Vec::new();
         for _ in 0..MAX_VEC_LEN {
             // Create zero or more array indicies
@@ -13,12 +13,12 @@ impl<'a> ArbitraryIn<'a, Context> for Index {
             }
 
             // Initialize a context expecting `const int`
-            let mut c = c.clone();
+            let mut c = self.clone();
             c.expected_type = Type::Int;
             c.expected_const = true;
 
             // Create a const integer as the next array index
-            let exp = Exp::arbitrary(u, &c)?;
+            let exp = c.arbitrary(u)?;
             index.push(exp);
         }
         Ok(Index(index))
