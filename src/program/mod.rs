@@ -29,4 +29,5 @@ pub use value_type::*;
 pub use var_decl::*;
 
 pub const MAX_VEC_LEN: i32 = 10;
+pub const MAX_ARR_LEN: i32 = 10;
 pub const MAX_DEPTH: i32 = 10;
