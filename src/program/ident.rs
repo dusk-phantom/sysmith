@@ -44,7 +44,7 @@ impl Display for Ident {
 }
 
 /// Character that can appear in an identifier
-/// TODO: add support for number
+/// TODO add support for number
 #[derive(Debug, Clone)]
 pub struct IdentChar(u8);
 
