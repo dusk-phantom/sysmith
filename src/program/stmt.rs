@@ -1,5 +1,3 @@
-use crate::random_retry;
-
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -103,11 +101,13 @@ impl<'a> ArbitraryIn<'a, Context> for Stmt {
         let mut c = c.clone();
         c.depth += 1;
         if c.depth > MAX_DEPTH {
-            return Ok(Stmt::Block(Block { block_vec: Vec::new() }));
+            return Ok(Stmt::Block(Block {
+                block_vec: Vec::new(),
+            }));
         }
 
         // Generate a random statement including break and continue
-        random_retry! { size = 8, bytes = u;
+        match u.int_in_range(0..=7)? {
             0 => Ok(Stmt::Assign(Assign::arbitrary(u, &c)?)),
             1 => Ok(Stmt::ExpStmt(ExpStmt::arbitrary(u, &c)?)),
             2 => Ok(Stmt::Block(Block::arbitrary(u, &c)?)),
@@ -119,16 +119,17 @@ impl<'a> ArbitraryIn<'a, Context> for Stmt {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
                 Ok(Stmt::Break(Break))
-            },
+            }
             6 => {
                 // Prevent continue outside of loop
                 if !c.in_loop {
                     return Err(arbitrary::Error::EmptyChoose);
                 }
                 Ok(Stmt::Continue(Continue))
-            },
+            }
             // Safety: return type is numeric, so it can't fail
             7 => Ok(Stmt::Return(Return::arbitrary(u, &c)?)),
+            _ => unreachable!(),
         }
     }
 }
@@ -159,40 +160,47 @@ impl<'a> ArbitraryIn<'a, Context> for Assign {
     /// Error should be handled manually
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Filter number or array left values from context
-        let mut candidates: Vec<(LVal, Type)> = c.ctx.iter().filter_map(|(id, ty)| {
-            let mut current_type = ty.clone();
-            let mut current_lval = LVal {
-                id: id.clone().into(),
-                index: Index(Vec::new()),
-            };
-
-            // Collapse array type, 
-            // did not allow assigning an array to another
-            while let Type::Array(t, _) = current_type {
-                // Generate a random index in bound
-                // TODO refer to constant here
-                let index = match u.arbitrary::<i32>() {
-                    Ok(i) => i,
-                    Err(err) => return Some(Err(err)),
+        let mut candidates: Vec<(LVal, Type)> = c
+            .ctx
+            .iter()
+            .filter_map(|(id, ty)| {
+                let mut current_type = ty.clone();
+                let mut current_lval = LVal {
+                    id: id.clone().into(),
+                    index: Index(Vec::new()),
                 };
 
-                current_type = *t;
-                current_lval.index.0.push(Exp::Number(Number::IntConst(index)));
-            }
+                // Collapse array type,
+                // did not allow assigning an array to another
+                while let Type::Array(t, _) = current_type {
+                    // Generate a random index in bound
+                    // TODO refer to constant here
+                    let index = match u.arbitrary::<i32>() {
+                        Ok(i) => i,
+                        Err(err) => return Some(Err(err)),
+                    };
 
-            // Only accept int or float type as left value,
-            // void or function will be rejected
-            match current_type {
-                Type::Int | Type::Float => Some(Ok((current_lval, current_type))),
-                _ => None
-            }
-        }).collect::<Result<_, >>()?;
+                    current_type = *t;
+                    current_lval
+                        .index
+                        .0
+                        .push(Exp::Number(Number::IntConst(index)));
+                }
+
+                // Only accept int or float type as left value,
+                // void or function will be rejected
+                match current_type {
+                    Type::Int | Type::Float => Some(Ok((current_lval, current_type))),
+                    _ => None,
+                }
+            })
+            .collect::<Result<_>>()?;
 
         // If there's no candidate, return an error
         if candidates.is_empty() {
             return Err(arbitrary::Error::EmptyChoose);
         }
-                
+
         // Randomly choose a candidate
         let selected_index = u.arbitrary::<usize>()? % candidates.len();
         let (lval, ty) = candidates.swap_remove(selected_index);
@@ -358,7 +366,7 @@ impl<'a> ArbitraryIn<'a, Context> for Return {
                 c.expected_type = c.return_type.clone();
                 Some(Exp::arbitrary(u, &c)?)
             }
-            _ => panic!("Invalid return type")
+            _ => panic!("Invalid return type"),
         };
         Ok(Return { exp })
     }
