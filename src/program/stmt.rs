@@ -169,10 +169,10 @@ impl<'a> ArbitraryTo<'a, Stmt> for AssignContext<'_> {
 
                 // Collapse array type,
                 // did not allow assigning an array to another
-                while let Type::Array(t, _) = current_type {
+                while let Type::Array(t, len) = current_type {
                     // Generate a random index in bound
                     // TODO refer to constant here
-                    let index = match u.arbitrary::<i32>() {
+                    let index = match u.int_in_range(0..=len - 1) {
                         Ok(i) => i,
                         Err(err) => return Some(Err(err)),
                     };
@@ -321,7 +321,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for WhileContext<'_> {
     fn can_arbitrary(&self, _: std::marker::PhantomData<Stmt>) -> bool {
         self.0.depth_is_valid()
     }
-    
+
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
         // Context for condition expects int type
         let mut c = self.0.clone();
