@@ -12,7 +12,7 @@ impl<'a> ArbitraryTo<'a, Block> for Context {
 
         // Generate zero or more predecessing block items
         for _ in 0..MAX_VEC_LEN {
-            if u.arbitrary()? {
+            if !u.arbitrary()? {
                 break;
             }
             let block_item: BlockItem = local_context.arbitrary(u)?;
@@ -97,26 +97,34 @@ impl Resolve for Stmt {
 
 impl<'a> ArbitraryTo<'a, Stmt> for Context {
     fn can_arbitrary(&self, _: std::marker::PhantomData<Stmt>) -> bool {
+        // Increase context depth
+        let c = self.next();
+
+        // All possible choices
         let contexts = [
-            Box::new(AssignContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ExpContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(IfContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(WhileContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(BreakContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ContinueContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ReturnContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(AssignContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ExpContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(IfContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(WhileContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(BreakContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ContinueContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ReturnContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
         ];
         can_arbitrary_any(contexts.as_slice())
     }
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
+        // Increase context depth
+        let c = self.next();
+
+        // All possible choices
         let contexts = [
-            Box::new(AssignContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ExpContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(IfContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(WhileContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(BreakContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ContinueContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
-            Box::new(ReturnContext(self)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(AssignContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ExpContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(IfContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(WhileContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(BreakContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ContinueContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(ReturnContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
         ];
         arbitrary_any(u, contexts.as_slice())
     }
@@ -264,6 +272,10 @@ pub struct If {
 struct IfContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Stmt> for IfContext<'_> {
+    fn can_arbitrary(&self, _: std::marker::PhantomData<Stmt>) -> bool {
+        self.0.depth_is_valid()
+    }
+
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
         // Context for condition expects int type
         let mut c = self.0.clone();
@@ -306,6 +318,10 @@ pub struct While {
 struct WhileContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Stmt> for WhileContext<'_> {
+    fn can_arbitrary(&self, _: std::marker::PhantomData<Stmt>) -> bool {
+        self.0.depth_is_valid()
+    }
+    
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
         // Context for condition expects int type
         let mut c = self.0.clone();

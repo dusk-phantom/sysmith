@@ -24,3 +24,17 @@ pub struct Context {
     /// Current AST depth
     pub depth: i32,
 }
+
+impl Context {
+    /// Create a new context with increased depth
+    pub fn next(&self) -> Self {
+        let mut c = self.clone();
+        c.depth += 1;
+        c
+    }
+
+    /// Check if depth exceeds
+    pub fn depth_is_valid(&self) -> bool {
+        self.depth <= MAX_DEPTH
+    }
+}
