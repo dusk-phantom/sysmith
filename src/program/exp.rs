@@ -1,5 +1,188 @@
 use super::*;
 
+/// Convert a variable in context to an expression
+fn reify_variable(u: &mut Unstructured, c: &Context, id: &Ident, ty: &Type) -> Option<Result<Exp>> {
+    let id = id.clone();
+
+    // If type match, directly add as candidate
+    if *ty == c.expected_type {
+        return Some(Ok(Exp::LVal(LVal {
+            id,
+            index: Index(Vec::new()),
+        })));
+    }
+
+    // If type is function, check if return type matches
+    // If matches, add as candidate
+    if let Type::Func(ret_type, param) = ty {
+        if **ret_type == c.expected_type {
+            // Map parameters to arbitrary instances of its type
+            match param
+                .iter()
+                .map(|x| {
+                    let mut c = c.clone();
+                    c.expected_type = x.clone();
+                    c.expected_const = false;
+                    Exp::arbitrary(u, &c)
+                })
+                .collect::<Result<_, _>>()
+            {
+                Ok(exp_vec) => return Some(Ok(Exp::FuncCall((id, Some(FuncRParams { exp_vec }))))),
+                Err(err) => return Some(Err(err)),
+            }
+        }
+    }
+
+    // If type is array, recursively check if content type matches
+    // until content type is no longer an array
+    let mut current_type = ty;
+    let mut current_exp = LVal {
+        id: id.clone(),
+        index: Index(Vec::new()),
+    };
+    while let Type::Array(content_type, len) = current_type {
+        // Generate a random index in bound
+        // TODO refer to constant here
+        let index = match u.arbitrary::<i32>() {
+            Ok(i) => i,
+            Err(err) => return Some(Err(err)),
+        };
+
+        // Update current processing type and expression
+        current_type = content_type;
+        current_exp
+            .index
+            .0
+            .push(Exp::Number(Number::IntConst(index % len)));
+        if *current_type == c.expected_type {
+            return Some(Ok(Exp::LVal(current_exp)));
+        }
+    }
+
+    // Otherwise, it's impossible for this identifier to transform
+    // to the expected type
+    None
+}
+
+#[derive(Debug, Clone)]
+pub struct Var(Exp);
+
+impl From<Var> for Exp {
+    fn from(value: Var) -> Self {
+        let Var(e) = value;
+        e
+    }
+}
+
+impl<'a> ArbitraryIn<'a, Context> for Var {
+    fn can_arbitrary(c: &Context) -> bool {
+        for ty in c.ctx.values() {
+            // If type match, using this variable is OK
+            if *ty == c.expected_type {
+                return true;
+            }
+
+            // If type is function, check if return type matches
+            // If matches, check if argument can be filled
+            if let Type::Func(ret_type, param) = ty {
+                if **ret_type == c.expected_type {
+                    let mut can_arbitrary = true;
+                    for x in param.iter() {
+                        let mut c = c.clone();
+                        c.expected_type = x.clone();
+                        c.expected_const = false;
+                        if !Exp::can_arbitrary(&c) {
+                            can_arbitrary = false;
+                            break;
+                        }
+                    }
+                    if can_arbitrary {
+                        return true;
+                    }
+                }
+            }
+
+            // If type is array, recursively check if content type matches
+            // until content type is no longer an array
+            let mut current_type = ty;
+            while let Type::Array(content_type, _) = current_type {
+                current_type = content_type;
+                if *current_type == c.expected_type {
+                    return true;
+                }
+            }
+        }
+
+        // No variable found in context
+        false
+    }
+
+    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Var> {
+        // Ensure not require constant for variable reference
+        // TODO filter constant (requires eval to return Result)
+        if c.expected_const {
+            return Err(arbitrary::Error::EmptyChoose);
+        }
+
+        // Filter possible candidates from context
+        let mut candidates: Vec<_> = c
+            .ctx
+            .iter()
+            .filter_map(|(id, ty)| {
+                let id = Ident::from(id.clone());
+
+                // If type match, using this variable is OK
+                if *ty == c.expected_type {
+                    return Some((id, ty));
+                }
+
+                // If type is function, check if return type matches
+                // If matches, check if argument can be filled
+                if let Type::Func(ret_type, param) = ty {
+                    if **ret_type == c.expected_type {
+                        let mut can_arbitrary = true;
+                        for x in param.iter() {
+                            let mut c = c.clone();
+                            c.expected_type = x.clone();
+                            c.expected_const = false;
+                            if !Exp::can_arbitrary(&c) {
+                                can_arbitrary = false;
+                                break;
+                            }
+                        }
+                        if can_arbitrary {
+                            return Some((id, ty));
+                        }
+                    }
+                }
+
+                // If type is array, recursively check if content type matches
+                // until content type is no longer an array
+                let mut current_type = ty;
+                while let Type::Array(content_type, _) = current_type {
+                    current_type = content_type;
+                    if *current_type == c.expected_type {
+                        return Some((id, ty));
+                    }
+                }
+
+                // Impossible to convert this variable to correct type
+                None
+            })
+            .collect();
+
+        // If there's no candidate, report unable to construct
+        if candidates.is_empty() {
+            panic!("impossible to construct variable");
+        }
+
+        // Randomly choose a candidate
+        let selected_index = u.arbitrary::<usize>()? % candidates.len();
+        let (id, ty) = candidates.swap_remove(selected_index);
+        Ok(Var(reify_variable(u, c, &id, &ty).unwrap()?))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Exp {
     Exp(Box<Exp>),
@@ -11,10 +194,146 @@ pub enum Exp {
 }
 
 impl<'a> ArbitraryIn<'a, Context> for Exp {
+    fn can_arbitrary(c: &Context) -> bool {
+        // Number can be generated trivially
+        if matches!(c.expected_type, Type::Float | Type::Int) {
+            return true;
+        }
+
+        // Otherwise check if generating variable is possible
+        Var::can_arbitrary(c)
+    }
+
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+        /// Generate a random variable from context
+        fn gen_var(u: &mut Unstructured, c: &Context) -> Result<Exp> {
+            // Ensure not require constant for variable reference
+            // TODO filter constant (requires eval to return Result)
+            if c.expected_const {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+
+            // Get all candidates from environment
+            let mut candidates: Vec<Exp> = c
+                .ctx
+                .iter()
+                .filter_map(|(id, ty)| {
+                    let id = Ident::from(id.clone());
+
+                    // If type match, directly add as candidate
+                    if *ty == c.expected_type {
+                        return Some(Ok(Exp::LVal(LVal {
+                            id,
+                            index: Index(Vec::new()),
+                        })));
+                    }
+
+                    // If type is function, check if return type matches
+                    // If matches, add as candidate
+                    if let Type::Func(ret_type, param) = ty {
+                        if **ret_type == c.expected_type {
+                            // Map parameters to arbitrary instances of its type
+                            match param
+                                .iter()
+                                .map(|x| {
+                                    let mut c = c.clone();
+                                    c.expected_type = x.clone();
+                                    c.expected_const = false;
+                                    Exp::arbitrary(u, &c)
+                                })
+                                .collect::<Result<_, _>>()
+                            {
+                                Ok(exp_vec) => {
+                                    return Some(Ok(Exp::FuncCall((
+                                        id,
+                                        Some(FuncRParams { exp_vec }),
+                                    ))))
+                                }
+                                Err(err) => return Some(Err(err)),
+                            }
+                        }
+                    }
+
+                    // If type is array, recursively check if content type matches
+                    // until content type is no longer an array
+                    let mut current_type = ty;
+                    let mut current_exp = LVal {
+                        id: id.clone(),
+                        index: Index(Vec::new()),
+                    };
+                    while let Type::Array(content_type, len) = current_type {
+                        // Generate a random index in bound
+                        // TODO refer to constant here
+                        let index = match u.arbitrary::<i32>() {
+                            Ok(i) => i,
+                            Err(err) => return Some(Err(err)),
+                        };
+
+                        // Update current processing type and expression
+                        current_type = content_type;
+                        current_exp
+                            .index
+                            .0
+                            .push(Exp::Number(Number::IntConst(index % len)));
+                        if *current_type == c.expected_type {
+                            return Some(Ok(Exp::LVal(current_exp)));
+                        }
+                    }
+
+                    // Otherwise, it's impossible for this identifier to transform
+                    // to the expected type
+                    None
+                })
+                .collect::<Result<_, _>>()?;
+
+            // If there's no candidate, report unable to construct
+            if candidates.is_empty() {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+
+            // Randomly choose a candidate
+            let selected_index = u.arbitrary::<usize>()? % candidates.len();
+            Ok(candidates.swap_remove(selected_index))
+        }
+
+        fn gen_nested(u: &mut Unstructured, c: &Context) -> Result<Exp> {
+            Ok(Exp::Exp(Box::new(Exp::arbitrary(u, &c)?)))
+        }
+
+        fn gen_unary(u: &mut Unstructured, c: &Context) -> Result<Exp> {
+            // Expected type must be numeric to generate unary expression
+            if !c.expected_type.is_numeric() {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+            let op = UnaryOp::arbitrary(u)?;
+            let exp = Box::new(Exp::arbitrary(u, &c)?);
+            Ok(Exp::OpUnary((op, exp)))
+        }
+
+        fn gen_binary(u: &mut Unstructured, c: &Context) -> Result<Exp> {
+            // Expected type must be numeric to generate binary expression
+            if !c.expected_type.is_numeric() {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+            let a = Box::new(Exp::arbitrary(u, &c)?);
+            let b = BinaryOp::arbitrary(u)?;
+            let c = Box::new(Exp::arbitrary(u, &c)?);
+            Ok(Exp::OpExp((a, b, c)))
+        }
+
+        fn gen_number(u: &mut Unstructured, c: &Context) -> Result<Exp> {
+            // Expected type must be numeric to generate number
+            if !c.expected_type.is_numeric() {
+                return Err(arbitrary::Error::EmptyChoose);
+            }
+            Ok(Exp::Number(Number::arbitrary(u, &c)?))
+        }
+
         // Increase depth of context, converge if depth exceeds
         let mut c = c.clone();
         c.depth += 1;
+
+        // Depth exceeds
         if c.depth > MAX_DEPTH {
             if !c.expected_type.is_numeric() {
                 return Err(arbitrary::Error::EmptyChoose);
@@ -26,122 +345,11 @@ impl<'a> ArbitraryIn<'a, Context> for Exp {
         // Only function argument will demand non-numeric type,
         // so this function guarantees to succeed
         match u.int_in_range(0..=4)? {
-            0 => {
-                // Ensure not require constant for variable reference
-                // TODO filter constant (requires eval to return Result)
-                if c.expected_const {
-                    return Err(arbitrary::Error::EmptyChoose);
-                }
-
-                // Get all candidates from environment
-                let mut candidates: Vec<Self> = c
-                    .ctx
-                    .iter()
-                    .filter_map(|(id, ty)| {
-                        let id = Ident::from(id.clone());
-
-                        // If type match, directly add as candidate
-                        if *ty == c.expected_type {
-                            return Some(Ok(Exp::LVal(LVal {
-                                id,
-                                index: Index(Vec::new()),
-                            })));
-                        }
-
-                        // If type is function, check if return type matches
-                        // If matches, add as candidate
-                        if let Type::Func(ret_type, param) = ty {
-                            if **ret_type == c.expected_type {
-                                // Map parameters to arbitrary instances of its type
-                                match param
-                                    .iter()
-                                    .map(|x| {
-                                        let mut c = c.clone();
-                                        c.expected_type = x.clone();
-                                        c.expected_const = false;
-                                        Exp::arbitrary(u, &c)
-                                    })
-                                    .collect::<Result<_, _>>()
-                                {
-                                    Ok(exp_vec) => {
-                                        return Some(Ok(Exp::FuncCall((
-                                            id,
-                                            Some(FuncRParams { exp_vec }),
-                                        ))))
-                                    }
-                                    Err(err) => return Some(Err(err)),
-                                }
-                            }
-                        }
-
-                        // If type is array, recursively check if content type matches
-                        // until content type is no longer an array
-                        let mut current_type = ty;
-                        let mut current_exp = LVal {
-                            id: id.clone(),
-                            index: Index(Vec::new()),
-                        };
-                        while let Type::Array(content_type, len) = current_type {
-                            // Generate a random index in bound
-                            // TODO refer to constant here
-                            let index = match u.arbitrary::<i32>() {
-                                Ok(i) => i,
-                                Err(err) => return Some(Err(err)),
-                            };
-
-                            // Update current processing type and expression
-                            current_type = content_type;
-                            current_exp
-                                .index
-                                .0
-                                .push(Exp::Number(Number::IntConst(index % len)));
-                            if *current_type == c.expected_type {
-                                return Some(Ok(Exp::LVal(current_exp)));
-                            }
-                        }
-
-                        // Otherwise, it's impossible for this identifier to transform
-                        // to the expected type
-                        None
-                    })
-                    .collect::<Result<_, _>>()?;
-
-                // If there's no candidate, report unable to construct
-                if candidates.is_empty() {
-                    return Err(arbitrary::Error::EmptyChoose);
-                }
-
-                // Randomly choose a candidate
-                let selected_index = u.arbitrary::<usize>()? % candidates.len();
-                Ok(candidates.swap_remove(selected_index))
-            }
-            1 => Ok(Exp::Exp(Box::new(Exp::arbitrary(u, &c)?))),
-            2 => {
-                // Expected type must be numeric to generate unary expression
-                if !c.expected_type.is_numeric() {
-                    return Err(arbitrary::Error::EmptyChoose);
-                }
-                let op = UnaryOp::arbitrary(u)?;
-                let exp = Box::new(Exp::arbitrary(u, &c)?);
-                Ok(Exp::OpUnary((op, exp)))
-            }
-            3 => {
-                // Expected type must be numeric to generate binary expression
-                if !c.expected_type.is_numeric() {
-                    return Err(arbitrary::Error::EmptyChoose);
-                }
-                let a = Box::new(Exp::arbitrary(u, &c)?);
-                let b = BinaryOp::arbitrary(u)?;
-                let c = Box::new(Exp::arbitrary(u, &c)?);
-                Ok(Exp::OpExp((a, b, c)))
-            }
-            4 => {
-                // Expected type must be numeric to generate number
-                if !c.expected_type.is_numeric() {
-                    return Err(arbitrary::Error::EmptyChoose);
-                }
-                Ok(Exp::Number(Number::arbitrary(u, &c)?))
-            }
+            0 => gen_var(u, &c),
+            1 => gen_nested(u, &c),
+            2 => gen_unary(u, &c),
+            3 => gen_binary(u, &c),
+            4 => gen_number(u, &c),
             _ => unreachable!(),
         }
     }
