@@ -154,7 +154,7 @@ pub struct NestedContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for NestedContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        true
+        self.0.depth_is_valid()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -170,7 +170,7 @@ pub struct BinaryOpContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for BinaryOpContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        self.0.expected_type.is_numeric()
+        self.0.expected_type.is_numeric() && self.0.depth_is_valid()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -189,7 +189,7 @@ pub struct UnaryOpContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for UnaryOpContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        self.0.expected_type.is_numeric()
+        self.0.expected_type.is_numeric() && self.0.depth_is_valid()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -227,23 +227,31 @@ pub enum Exp {
 
 impl<'a> ArbitraryTo<'a, Exp> for Context {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
+        // Increase context depth
+        let c = self.next();
+
+        // All possible choices
         let contexts = [
-            Box::new(NumberContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(UnaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(BinaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(NestedContext(self)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(NumberContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(UnaryOpContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(BinaryOpContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(VarContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(NestedContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
         ];
         can_arbitrary_any(&contexts)
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
+        // Increase context depth
+        let c = self.next();
+
+        // All possible choices
         let contexts = [
-            Box::new(NumberContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(UnaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(BinaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
-            Box::new(NestedContext(self)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(NumberContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(UnaryOpContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(BinaryOpContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(VarContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(NestedContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
         ];
         arbitrary_any(u, &contexts)
     }
