@@ -1,13 +1,16 @@
+use std::marker::PhantomData;
+
 use super::*;
 
-pub trait ArbitraryIn<'a, T>: Sized {
-    /// Generate an arbitrary instance of Self,
-    /// with respect to the given context
-    fn arbitrary(g: &mut Unstructured<'a>, c: &T) -> Result<Self>;
+pub trait ArbitraryTo<'a, T>: Sized {
+    /// Generate an arbitrary instance of T,
+    /// with respect to the given context (self)
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<T>;
 
     /// Check if generating an arbitrary instance is possible,
-    /// does not consume bytes
-    fn can_arbitrary(_: &T) -> bool {
+    /// does not consume bytes.
+    /// Phantom data is required to specify the type it converts to.
+    fn can_arbitrary(&self, _: PhantomData<T>) -> bool {
         true
     }
 }

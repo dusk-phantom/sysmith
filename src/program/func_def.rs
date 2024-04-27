@@ -18,19 +18,19 @@ impl Resolve for FuncDef {
     }
 }
 
-impl<'a> ArbitraryIn<'a, Context> for FuncDef {
-    fn arbitrary(u: &mut Unstructured<'a>, ctx: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, FuncDef> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<FuncDef> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
         let ident = Ident::arbitrary(u)?;
-        let func_fparams = FuncFParams::arbitrary(u, ctx)?;
+        let func_fparams = self.arbitrary(u)?;
 
         // Initialize a context expecting return type `func_type`
-        let mut ctx = ctx.clone();
-        ctx.return_type = func_type.clone().into();
+        let mut c = self.clone();
+        c.return_type = func_type.clone().into();
 
         // Generate function statements with return type specified
-        let block = Block::arbitrary(u, &ctx)?;
+        let block = c.arbitrary(u)?;
         Ok(FuncDef::ParameterFuncDef((
             func_type,
             ident,
@@ -53,15 +53,15 @@ pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
 }
 
-impl<'a> ArbitraryIn<'a, Context> for FuncFParams {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, FuncFParams> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<FuncFParams> {
         let mut func_fparams_vec = Vec::new();
         for _ in 0..MAX_VEC_LEN {
             // Generate zero or more function params
             if u.arbitrary()? {
                 break;
             }
-            let func_fparam = FuncFParam::arbitrary(u, c)?;
+            let func_fparam = self.arbitrary(u)?;
             func_fparams_vec.push(func_fparam);
         }
         Ok(FuncFParams { func_fparams_vec })
@@ -99,8 +99,8 @@ impl FuncFParam {
     }
 }
 
-impl<'a> ArbitraryIn<'a, Context> for FuncFParam {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, FuncFParam> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<FuncFParam> {
         // Generate array (x: int[][4]) or non-array (x: int) function parameter
         match u.int_in_range(0..=1)? {
             0 => {
@@ -115,7 +115,7 @@ impl<'a> ArbitraryIn<'a, Context> for FuncFParam {
                 let ident = Ident::arbitrary(u)?;
 
                 // Generate random array type
-                let var_index = Index::arbitrary(u, c)?;
+                let var_index = self.arbitrary(u)?;
                 Ok(FuncFParam::Array((btype, ident, var_index)))
             }
             _ => unreachable!(),

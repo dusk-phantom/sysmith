@@ -22,7 +22,7 @@ impl<'a> Arbitrary<'a> for CompUnit {
 
         // Generate at least one global item
         for _ in 0..MAX_VEC_LEN {
-            let item = GlobalItems::arbitrary(u, &context)?;
+            let item: GlobalItems = context.arbitrary(u)?;
             item.resolve(&mut context);
             global_items.push(item);
             if u.arbitrary()? {
@@ -62,12 +62,12 @@ impl Resolve for GlobalItems {
     }
 }
 
-impl<'a> ArbitraryIn<'a, Context> for GlobalItems {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, GlobalItems> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<GlobalItems> {
         // Generate variable or function at random
         match u.int_in_range(0..=1)? {
-            0 => Ok(GlobalItems::Decl(VarDecl::arbitrary(u, c)?)),
-            1 => Ok(GlobalItems::FuncDef(FuncDef::arbitrary(u, c)?)),
+            0 => Ok(GlobalItems::Decl(self.arbitrary(u)?)),
+            1 => Ok(GlobalItems::FuncDef(self.arbitrary(u)?)),
             _ => unreachable!(),
         }
     }

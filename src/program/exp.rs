@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::*;
 
 /// Convert a variable in context to an expression
@@ -74,24 +76,24 @@ impl From<Var> for Exp {
     }
 }
 
-impl<'a> ArbitraryIn<'a, Context> for Var {
-    fn can_arbitrary(c: &Context) -> bool {
-        for ty in c.ctx.values() {
+impl<'a> ArbitraryTo<'a, Var> for Context {
+    fn can_arbitrary(&self) -> bool {
+        for ty in self.ctx.values() {
             // If type match, using this variable is OK
-            if *ty == c.expected_type {
+            if *ty == self.expected_type {
                 return true;
             }
 
             // If type is function, check if return type matches
             // If matches, check if argument can be filled
             if let Type::Func(ret_type, param) = ty {
-                if **ret_type == c.expected_type {
+                if **ret_type == self.expected_type {
                     let mut can_arbitrary = true;
                     for x in param.iter() {
-                        let mut c = c.clone();
+                        let mut c = self.clone();
                         c.expected_type = x.clone();
                         c.expected_const = false;
-                        if !Exp::can_arbitrary(&c) {
+                        if !self.can_arbitrary() {
                             can_arbitrary = false;
                             break;
                         }
@@ -107,7 +109,7 @@ impl<'a> ArbitraryIn<'a, Context> for Var {
             let mut current_type = ty;
             while let Type::Array(content_type, _) = current_type {
                 current_type = content_type;
-                if *current_type == c.expected_type {
+                if *current_type == self.expected_type {
                     return true;
                 }
             }
@@ -117,35 +119,35 @@ impl<'a> ArbitraryIn<'a, Context> for Var {
         false
     }
 
-    fn arbitrary(u: &mut Unstructured, c: &Context) -> Result<Var> {
+    fn arbitrary(&self, u: &mut Unstructured) -> Result<Var> {
         // Ensure not require constant for variable reference
         // TODO filter constant (requires eval to return Result)
-        if c.expected_const {
+        if self.expected_const {
             return Err(arbitrary::Error::EmptyChoose);
         }
 
         // Filter possible candidates from context
-        let mut candidates: Vec<_> = c
+        let mut candidates: Vec<_> = self
             .ctx
             .iter()
             .filter_map(|(id, ty)| {
                 let id = Ident::from(id.clone());
 
                 // If type match, using this variable is OK
-                if *ty == c.expected_type {
+                if *ty == self.expected_type {
                     return Some((id, ty));
                 }
 
                 // If type is function, check if return type matches
                 // If matches, check if argument can be filled
                 if let Type::Func(ret_type, param) = ty {
-                    if **ret_type == c.expected_type {
+                    if **ret_type == self.expected_type {
                         let mut can_arbitrary = true;
                         for x in param.iter() {
-                            let mut c = c.clone();
+                            let mut c = self.clone();
                             c.expected_type = x.clone();
                             c.expected_const = false;
-                            if !Exp::can_arbitrary(&c) {
+                            if !c.can_arbitrary(PhantomData::<Exp>) {
                                 can_arbitrary = false;
                                 break;
                             }
@@ -161,7 +163,7 @@ impl<'a> ArbitraryIn<'a, Context> for Var {
                 let mut current_type = ty;
                 while let Type::Array(content_type, _) = current_type {
                     current_type = content_type;
-                    if *current_type == c.expected_type {
+                    if *current_type == self.expected_type {
                         return Some((id, ty));
                     }
                 }
@@ -179,7 +181,7 @@ impl<'a> ArbitraryIn<'a, Context> for Var {
         // Randomly choose a candidate
         let selected_index = u.arbitrary::<usize>()? % candidates.len();
         let (id, ty) = candidates.swap_remove(selected_index);
-        Ok(Var(reify_variable(u, c, &id, &ty).unwrap()?))
+        Ok(Var(reify_variable(u, self, &id, &ty).unwrap()?))
     }
 }
 
@@ -193,18 +195,16 @@ pub enum Exp {
     OpExp((Box<Exp>, BinaryOp, Box<Exp>)),
 }
 
-impl<'a> ArbitraryIn<'a, Context> for Exp {
-    fn can_arbitrary(c: &Context) -> bool {
+impl<'a> ArbitraryTo<'a, Exp> for Context {
+    fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
         // Number can be generated trivially
-        if matches!(c.expected_type, Type::Float | Type::Int) {
+        if matches!(self.expected_type, Type::Float | Type::Int) {
             return true;
         }
-
-        // Otherwise check if generating variable is possible
-        Var::can_arbitrary(c)
+        return false;
     }
 
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
         /// Generate a random variable from context
         fn gen_var(u: &mut Unstructured, c: &Context) -> Result<Exp> {
             // Ensure not require constant for variable reference
@@ -464,8 +464,8 @@ pub enum Number {
     FloatConst(FloatConst),
 }
 
-impl<'a> ArbitraryIn<'a, Context> for Number {
-    fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
+impl<'a> ArbitraryTo<'a, Number> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Number> {
         match c.expected_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             Type::Float => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
