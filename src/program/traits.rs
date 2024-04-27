@@ -4,6 +4,12 @@ pub trait ArbitraryIn<'a, T>: Sized {
     /// Generate an arbitrary instance of Self,
     /// with respect to the given context
     fn arbitrary(g: &mut Unstructured<'a>, c: &T) -> Result<Self>;
+
+    /// Check if generating an arbitrary instance is possible,
+    /// does not consume bytes
+    fn can_arbitrary(_: &T) -> bool {
+        true
+    }
 }
 
 pub trait Resolve {
