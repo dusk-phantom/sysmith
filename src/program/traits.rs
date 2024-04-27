@@ -4,17 +4,11 @@ pub trait ArbitraryIn<'a, T>: Sized {
     /// Generate an arbitrary instance of Self,
     /// with respect to the given context
     fn arbitrary(g: &mut Unstructured<'a>, c: &T) -> Result<Self>;
-
-    /// Generate an arbitrary value of `Self` from the entirety of the given
-    /// unstructured data.
-    fn arbitrary_take_rest(mut u: Unstructured<'a>, c: &T) -> Result<Self> {
-        Self::arbitrary(&mut u, c)
-    }
 }
 
 pub trait Resolve {
     /// Resolve generated declaration to a given context.
-    /// Typically means adding self to `ctx` (Name -> Type) 
+    /// Typically means adding self to `ctx` (Name -> Type)
     /// or `env` (Name -> Value) when self is constant
     fn resolve(&self, context: &mut Context);
 }
