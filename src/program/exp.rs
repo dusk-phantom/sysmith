@@ -228,10 +228,10 @@ pub enum Exp {
 impl<'a> ArbitraryTo<'a, Exp> for Context {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
         let contexts = [
-            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(NumberContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(UnaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(BinaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(NestedContext(self)) as Box<dyn ArbitraryTo<Exp>>,
         ];
         can_arbitrary_any(&contexts)
@@ -239,10 +239,10 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
         let contexts = [
-            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(NumberContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(UnaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(BinaryOpContext(self)) as Box<dyn ArbitraryTo<Exp>>,
+            Box::new(VarContext(self)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(NestedContext(self)) as Box<dyn ArbitraryTo<Exp>>,
         ];
         arbitrary_any(u, &contexts)
