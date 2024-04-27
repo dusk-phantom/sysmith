@@ -14,6 +14,12 @@ pub struct SingleVarContext<'a> {
 
 impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
+        // If expected constant, do not refer to variable
+        // TODO refer to constant only
+        if self.ctx.expected_const {
+            return false;
+        }
+        
         // If type match, using this variable is OK
         if self.ty == self.ctx.expected_type {
             return true;
