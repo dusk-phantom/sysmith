@@ -18,7 +18,6 @@ impl<'a> ArbitraryIn<'a, Context> for Index {
             c.expected_const = true;
 
             // Create a const integer as the next array index
-            // Safety: expected type is Int so it can't fail
             let exp = Exp::arbitrary(u, &c)?;
             index.push(exp);
         }

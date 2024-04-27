@@ -111,7 +111,6 @@ impl<'a> ArbitraryIn<'a, Context> for VarInitVal {
         match c.expected_type.clone() {
             Type::Int | Type::Float => {
                 // Random integer or float
-                // Safety: expected type is Int or Float so it can't fail
                 Ok(VarInitVal::Exp(Exp::arbitrary(u, c)?))
             }
             Type::Array(content_type, content_len) => {

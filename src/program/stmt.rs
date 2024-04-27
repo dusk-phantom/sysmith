@@ -127,7 +127,6 @@ impl<'a> ArbitraryIn<'a, Context> for Stmt {
                 }
                 Ok(Stmt::Continue(Continue))
             }
-            // Safety: return type is numeric, so it can't fail
             7 => Ok(Stmt::Return(Return::arbitrary(u, &c)?)),
             _ => unreachable!(),
         }
@@ -156,8 +155,6 @@ pub struct Assign {
 }
 
 impl<'a> ArbitraryIn<'a, Context> for Assign {
-    /// Safety: if there's nothing in context, this function will fail
-    /// Error should be handled manually
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Filter number or array left values from context
         let mut candidates: Vec<(LVal, Type)> = c
@@ -211,7 +208,6 @@ impl<'a> ArbitraryIn<'a, Context> for Assign {
         c.expected_const = false;
 
         // Generate a expression of matching type
-        // Safety: type is guaranteed to be int or float
         let exp = Exp::arbitrary(u, &c)?;
         Ok(Assign { lval, exp })
     }
@@ -240,8 +236,7 @@ impl<'a> ArbitraryIn<'a, Context> for ExpStmt {
             c.expected_const = false;
 
             // Generate a random statement of this type (non-constant)
-            // Safety: if type is void, it's possible to fail,
-            // but we'll return None in that case
+            // If impossible, generate a stray semicolon
             match Exp::arbitrary(u, &c) {
                 Ok(e) => Some(e),
                 Err(_) => None,
@@ -273,7 +268,6 @@ pub struct If {
 impl<'a> ArbitraryIn<'a, Context> for If {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
-        // Safety: expected type is int so it can't fail
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
@@ -313,7 +307,6 @@ pub struct While {
 impl<'a> ArbitraryIn<'a, Context> for While {
     fn arbitrary(u: &mut Unstructured<'a>, c: &Context) -> Result<Self> {
         // Context for condition expects int type
-        // Safety: expected type is int so it can't fail
         let mut c = c.clone();
         c.expected_type = Type::Int;
         c.expected_const = false;
@@ -361,7 +354,6 @@ impl<'a> ArbitraryIn<'a, Context> for Return {
             Type::Void => None,
             Type::Float | Type::Int => {
                 // Context for returned expression expects return type
-                // Safety: function return type is numeric, so it can't fail
                 let mut c = c.clone();
                 c.expected_type = c.return_type.clone();
                 Some(Exp::arbitrary(u, &c)?)
