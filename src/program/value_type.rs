@@ -1,5 +1,30 @@
 use super::*;
 
+/// Expected type
+#[derive(Debug, Clone)]
+pub struct ExpectedType {
+    pub is_const: bool,
+    pub value_type: Type,
+    pub bound: Option<IntBound>,
+}
+
+/// Bound on integer type
+#[derive(Debug, Clone)]
+pub struct IntBound {
+    /// Lower bound, inclusive
+    pub min: i32,
+
+    /// Upper bound, inclusive
+    pub max: i32,
+}
+
+impl IntBound {
+    /// [min, max]
+    pub fn new(min: i32, max: i32) -> Self {
+        IntBound { min, max }
+    }
+}
+
 /// All possible types
 #[derive(Debug, Clone)]
 pub enum Type {

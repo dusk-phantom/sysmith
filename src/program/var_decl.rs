@@ -14,7 +14,7 @@ impl Resolve for VarDecl {
             ctx.ctx.insert(def.ident.to_string(), var_type);
 
             // Add to env if constant
-            if ctx.expected_const {
+            if ctx.expected.is_const {
                 let val = def.init_val.eval(ctx);
                 ctx.env.insert(def.ident.to_string(), val);
             }
@@ -30,8 +30,11 @@ impl<'a> ArbitraryTo<'a, VarDecl> for Context {
 
         // Initialize context
         let mut c = self.clone();
-        c.expected_type = btype.clone().into();
-        c.expected_const = is_const;
+        c.expected = ExpectedType {
+            is_const,
+            value_type: btype.clone().into(),
+            bound: None,
+        };
 
         // Generate at lease one definition
         let mut const_def_vec = Vec::new();
@@ -78,11 +81,15 @@ impl<'a> ArbitraryTo<'a, VarDef> for Context {
 
         // Generate random array type
         let index: Index = self.arbitrary(u)?;
-        let var_type = index.apply(self.expected_type.clone(), self);
+        let var_type = index.apply(self.expected.value_type.clone(), self);
 
         // Generate assigned value in context with expected type revised
         let mut c: Context = self.clone();
-        c.expected_type = var_type.clone();
+        c.expected = ExpectedType {
+            is_const: c.expected.is_const,
+            value_type: var_type.clone(),
+            bound: None,
+        };
         let init_val = c.arbitrary(u)?;
 
         // Return the variable definition
@@ -108,7 +115,7 @@ pub enum VarInitVal {
 
 impl<'a> ArbitraryTo<'a, VarInitVal> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<VarInitVal> {
-        match self.expected_type.clone() {
+        match self.expected.value_type.clone() {
             Type::Int | Type::Float => {
                 // Random integer or float
                 Ok(VarInitVal::Exp(self.arbitrary(u)?))
@@ -117,7 +124,11 @@ impl<'a> ArbitraryTo<'a, VarInitVal> for Context {
                 // Initialize a context expecting `content_type`
                 // Constant flag inherits from parent context
                 let mut c = self.clone();
-                c.expected_type = *content_type.clone();
+                c.expected = ExpectedType {
+                    is_const: false,
+                    value_type: *content_type.clone(),
+                    bound: None,
+                };
 
                 // Fill array with random contents
                 let mut init_val_vec = Vec::new();

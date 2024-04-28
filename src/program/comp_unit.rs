@@ -13,8 +13,11 @@ impl<'a> Arbitrary<'a> for CompUnit {
         let mut context = Context {
             ctx: HashMap::new(),
             env: HashMap::new(),
-            expected_type: Type::Void,
-            expected_const: false,
+            expected: ExpectedType {
+                is_const: false,
+                value_type: Type::Void,
+                bound: None,
+            },
             return_type: Type::Void,
             in_loop: false,
             depth: 0,

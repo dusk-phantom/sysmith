@@ -10,10 +10,7 @@ pub struct Context {
     pub env: HashMap<String, Value>,
 
     /// Expected type for the current expression
-    pub expected_type: Type,
-
-    /// Flag if expected type is a constant
-    pub expected_const: bool,
+    pub expected: ExpectedType,
 
     /// Expected return type for the current function
     pub return_type: Type,

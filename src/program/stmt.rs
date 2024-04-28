@@ -186,25 +186,32 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
         // did not allow assigning an array to another
         while let Type::Array(t, len) = ty {
             // Generate a random index in bound
-            // TODO refer to constant here
-            let index = u.int_in_range(0..=len - 1)?;
+            let mut c = self.ctx.clone();
+            c.expected = ExpectedType {
+                is_const: false,
+                value_type: Type::Int,
+                bound: Some(IntBound::new(0, len - 1)),
+            };
+            let exp = c.arbitrary(u)?;
 
             // Advance type and lval
             ty = *t;
             lval
                 .index
                 .0
-                .push(Exp::Number(Number::IntConst(index)));
+                .push(exp);
         }
 
         // Initialize a new context with expected type `ty`
         let mut c = self.ctx.clone();
-        c.expected_type = ty.clone();
-        c.expected_const = false;
+        c.expected = ExpectedType {
+            is_const: false,
+            value_type: ty.clone(),
+            bound: None,
+        };
 
         // Generate a expression of matching type
         // As assigned variable is always int or float, this will not fail
-        // TODO support assignment to array?
         let exp = c.arbitrary(u)?;
         Ok(Stmt::Assign(Assign { lval, exp }))
     }
@@ -259,8 +266,11 @@ impl<'a> ArbitraryTo<'a, Stmt> for ExpContext<'_> {
 
             // Initialize a context expecting this type
             let mut c = self.0.clone();
-            c.expected_type = func_type.clone().into();
-            c.expected_const = false;
+            c.expected = ExpectedType {
+                is_const: false,
+                value_type: func_type.clone().into(),
+                bound: None,
+            };
 
             // Generate a random statement of this type (non-constant)
             // If impossible, generate a stray semicolon
@@ -303,8 +313,11 @@ impl<'a> ArbitraryTo<'a, Stmt> for IfContext<'_> {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
         // Context for condition expects int type
         let mut c = self.0.clone();
-        c.expected_type = Type::Int;
-        c.expected_const = false;
+        c.expected = ExpectedType {
+            is_const: false,
+            value_type: Type::Int,
+            bound: None,
+        };
         let cond = c.arbitrary(u)?;
 
         // Context for then and else is in loop
@@ -349,8 +362,11 @@ impl<'a> ArbitraryTo<'a, Stmt> for WhileContext<'_> {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
         // Context for condition expects int type
         let mut c = self.0.clone();
-        c.expected_type = Type::Int;
-        c.expected_const = false;
+        c.expected = ExpectedType {
+            is_const: false,
+            value_type: Type::Int,
+            bound: None,
+        };
         let cond = c.arbitrary(u)?;
 
         // Context for body is in loop
@@ -417,7 +433,11 @@ impl<'a> ArbitraryTo<'a, Stmt> for ReturnContext<'_> {
             Type::Float | Type::Int => {
                 // Context for returned expression expects return type
                 let mut c = self.0.clone();
-                c.expected_type = c.return_type.clone();
+                c.expected = ExpectedType {
+                    is_const: false,
+                    value_type: c.return_type.clone(),
+                    bound: None,
+                };
                 Some(c.arbitrary(u)?)
             }
             _ => panic!("Invalid return type"),

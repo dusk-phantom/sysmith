@@ -13,8 +13,13 @@ impl<'a> ArbitraryTo<'a, Index> for Context {
             }
 
             // Generate a random integer
-            // TODO refer to constant
-            let exp = Exp::Number(Number::IntConst(u.int_in_range(1..=MAX_ARR_LEN)?));
+            let mut c = self.clone();
+            c.expected = ExpectedType {
+                is_const: false,
+                value_type: Type::Int,
+                bound: Some(IntBound::new(1, MAX_ARR_LEN)),
+            };
+            let exp = c.arbitrary(u)?;
             index.push(exp);
         }
         Ok(Index(index))
