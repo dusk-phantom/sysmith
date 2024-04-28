@@ -34,7 +34,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                     c.expected = ExpectedType {
                         is_const: false,
                         value_type: x.clone(),
-                        bound: None,
+                        bound: IntBound::None,
                     };
                     if !c.can_arbitrary(PhantomData::<Exp>) {
                         can_arbitrary = false;
@@ -87,7 +87,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                         c.expected = ExpectedType {
                             is_const: false,
                             value_type: x.clone(),
-                            bound: None,
+                            bound: IntBound::None,
                         };
                         c.arbitrary(u)
                     })
@@ -111,7 +111,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
             c.expected = ExpectedType {
                 is_const: true,
                 value_type: Type::Int,
-                bound: Some(IntBound::new(0, len - 1)),
+                bound: IntBound::new(0, len - 1),
             };
             let exp = c.arbitrary(u)?;
 
@@ -272,7 +272,7 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
         let result = arbitrary_any(u, &contexts)?;
 
         // If expected int in range, wrap it to range
-        if let Some(IntBound { min, max }) = self.expected.bound {
+        if let IntBound::Range(min, max) = self.expected.bound {
             let Value::Int(a) = result.eval(&c) else {
                 panic!("Expected const int in range, but got non-integer");
             };
