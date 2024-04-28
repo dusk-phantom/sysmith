@@ -49,7 +49,7 @@ impl<'a> ArbitraryTo<'a, Ident> for Context {
         let mut ident = Ident(String::new());
         ident.0.push(arbitrary_head(u)? as char);
 
-        // Generate random length tail characters
+        // Generate zero or more tail characters
         for _ in 0..MAX_VEC_LEN {
             if u.arbitrary()? {
                 break;

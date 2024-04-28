@@ -6,13 +6,13 @@ pub struct Index(pub Vec<Exp>);
 impl<'a> ArbitraryTo<'a, Index> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Index> {
         let mut index = Vec::new();
+        // Create zero or more array indicies
         for _ in 0..MAX_VEC_LEN {
-            // Create zero or more array indicies
             if u.arbitrary()? {
                 break;
             }
 
-            // Generate a random integer
+            // Generate a random integer as dimension size
             let mut c = self.clone();
             c.expected = ExpectedType {
                 is_const: true,
