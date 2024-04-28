@@ -51,6 +51,7 @@ impl Display for FuncDef {
     }
 }
 
+/// Formal parameters of function
 #[derive(Debug, Clone)]
 pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
@@ -85,9 +86,16 @@ impl Display for FuncFParams {
     }
 }
 
+/// A formal parameter of a function
 #[derive(Debug, Clone)]
 pub enum FuncFParam {
+    /// Non-array argument
+    /// Example: `x`
     NonArray((BType, Ident)),
+
+    /// Array argument, the first dimension is omitted (as pointer).
+    /// Even if Index is empty, it is still an array.
+    /// Example: `x[][4]` where index is [4].
     Array((BType, Ident, Index)),
 }
 
