@@ -3,7 +3,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct VarDecl {
     pub btype: BType,
-    pub def_vec: PVec<VarDef>,
+    pub def_vec: Vec<VarDef>,
 }
 
 impl Resolve for VarDecl {
@@ -47,7 +47,7 @@ impl<'a> ArbitraryTo<'a, VarDecl> for Context {
         }
         Ok(VarDecl {
             btype,
-            def_vec: PVec(def_vec),
+            def_vec,
         })
     }
 }
