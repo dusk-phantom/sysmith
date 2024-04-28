@@ -2,34 +2,70 @@ use super::*;
 
 /// Identifier, character is limited
 #[derive(Debug, Clone)]
-pub struct Ident(pub Vec<IdentChar>);
+pub struct Ident(String);
 
 impl From<String> for Ident {
     fn from(s: String) -> Self {
-        Ident(s
-            .chars()
-            .map(|c| IdentChar(c as u8))
-            .collect::<Vec<IdentChar>>())
+        Ident(s)
+    }
+}
+
+impl From<Ident> for String {
+    fn from(i: Ident) -> Self {
+        i.0
     }
 }
 
 impl<'a> ArbitraryTo<'a, Ident> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Ident> {
-        let mut ident = Ident(Vec::new());
+        /// Generate a random head character for an identifier
+        fn arbitrary_head(u: &mut Unstructured) -> Result<u8> {
+            let norm = u.int_in_range(0..=52)? as u8;
+            if norm < 26 {
+                // 'A'..='Z'
+                Ok(norm + 65)
+            } else if norm < 52 {
+                // 'a'..='z'
+                Ok(norm - 26 + 97)
+            } else {
+                // '_'
+                Ok(95)
+            }
+        }
 
-        // Generate at least one character
+        /// Generate a random tail character for an identifier
+        fn arbitrary_tail(u: &mut Unstructured) -> Result<u8> {
+            let norm = u.int_in_range(0..=62)? as u8;
+            if norm < 26 {
+                // 'A'..='Z'
+                Ok(norm + 65)
+            } else if norm < 52 {
+                // 'a'..='z'
+                Ok(norm - 26 + 97)
+            } else if norm < 62 {
+                // '0'..='9'
+                Ok(norm - 52 + 48)
+            } else {
+                // '_'
+                Ok(95)
+            }
+        }
+
+        // Generate head character
+        let mut ident = Ident(String::new());
+        ident.0.push(arbitrary_head(u)? as char);
+
+        // Generate random length tail characters
         for _ in 0..MAX_VEC_LEN {
-            let c = IdentChar::arbitrary(u)?;
-            ident.0.push(c);
             if u.arbitrary()? {
                 break;
             }
+            ident.0.push(arbitrary_tail(u)? as char);
         }
 
         // While identifier exists in context, add another random character
         while self.ctx.contains_key(&ident.to_string()) {
-            let c = IdentChar::arbitrary(u)?;
-            ident.0.push(c);
+            ident.0.push(arbitrary_tail(u)? as char);
         }
         Ok(ident)
     }
@@ -37,31 +73,7 @@ impl<'a> ArbitraryTo<'a, Ident> for Context {
 
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let id: Vec<u8> = self.0.iter().map(|x| x.0).collect();
-        write!(f, "{}", String::from_utf8_lossy(&id))
-    }
-}
-
-/// Character that can appear in an identifier
-/// TODO add support for number
-#[derive(Debug, Clone)]
-pub struct IdentChar(u8);
-
-impl<'a> Arbitrary<'a> for IdentChar {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        let mut buffer = [0; 1];
-        u.fill_buffer(&mut buffer)?;
-        let norm = buffer[0] % 53;
-        if norm < 26 {
-            // 'A'..='Z'
-            Ok(IdentChar(norm + 65))
-        } else if norm < 52 {
-            // 'a'..='z'
-            Ok(IdentChar(norm - 26 + 97))
-        } else {
-            // '_'
-            Ok(IdentChar(95))
-        }
+        write!(f, "{}", self.0)
     }
 }
 
