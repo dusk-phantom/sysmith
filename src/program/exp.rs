@@ -14,8 +14,8 @@ pub struct SingleVarContext<'a> {
 
 impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        // If expected constant, do not refer to variable
-        if self.ctx.expected.is_const {
+        // If expected constant, make sure variable is constant
+        if self.ctx.expected.is_const && !self.ctx.env.contains_key(&self.id.to_string()) {
             return false;
         }
 
@@ -258,12 +258,6 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
-        // If expected int in range, directly generate
-        // TODO refer to constant
-        if let Some(IntBound { min, max }) = self.expected.bound {
-            return Ok(Exp::Number(Number::IntConst(u.int_in_range(min..=max)?)));
-        }
-
         // Increase context depth
         let c = self.next();
 
@@ -275,7 +269,23 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
             Box::new(VarContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
             Box::new(NestedContext(&c)) as Box<dyn ArbitraryTo<Exp>>,
         ];
-        arbitrary_any(u, &contexts)
+        let result = arbitrary_any(u, &contexts)?;
+
+        // If expected int in range, wrap it to range
+        if let Some(IntBound { min, max }) = self.expected.bound {
+            let Value::Int(a) = result.eval(&c) else {
+                panic!("Expected const int in range, but got non-integer");
+            };
+            let delta = a.rem_euclid(max - min + 1) + min - a;
+            return Ok(Exp::OpExp((
+                Box::new(result),
+                BinaryOp::Add,
+                Box::new(Exp::Number(Number::IntConst(delta))),
+            )));
+        }
+
+        // Otherwise directly return result
+        Ok(result)
     }
 }
 
