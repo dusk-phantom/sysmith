@@ -1,27 +1,5 @@
 use super::*;
 
-/// Positive vector, element count >= 1
-#[derive(Debug, Clone)]
-pub struct PVec<T>(pub Vec<T>);
-
-impl<T> PVec<T> {
-    pub fn iter(&self) -> core::slice::Iter<T> {
-        self.0.iter()
-    }
-}
-
-impl<'a, T> Arbitrary<'a> for PVec<T>
-where
-    T: Arbitrary<'a>,
-{
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        let mut v = Vec::<T>::arbitrary(u)?;
-        let t = T::arbitrary(u)?;
-        v.push(t);
-        Ok(PVec(v))
-    }
-}
-
 /// Identifier, character is limited
 #[derive(Debug, Clone)]
 pub struct Ident(pub Vec<IdentChar>);
