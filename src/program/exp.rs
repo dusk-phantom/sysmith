@@ -88,7 +88,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                     })
                     .collect::<Result<_, _>>()
                     .map(|exp_vec| {
-                        Exp::FuncCall((id, Some(FuncRParams { exp_vec })))
+                        Exp::FuncCall((id, FuncRParams { exp_vec }))
                     })
             }
         }
@@ -226,7 +226,7 @@ pub enum Exp {
     Exp(Box<Exp>),
     LVal(LVal),
     Number(Number),
-    FuncCall((Ident, Option<FuncRParams>)),
+    FuncCall((Ident, FuncRParams)),
     OpUnary((UnaryOp, Box<Exp>)),
     OpExp((Box<Exp>, BinaryOp, Box<Exp>)),
 }
@@ -321,8 +321,7 @@ impl Display for Exp {
             Self::Exp(a) => write!(f, "({})", a),
             Self::LVal(a) => write!(f, "{}", a),
             Self::Number(a) => write!(f, "{}", a),
-            Self::FuncCall((id, None)) => write!(f, "{}()", id),
-            Self::FuncCall((id, Some(param))) => write!(f, "{}({})", id, param),
+            Self::FuncCall((id, param)) => write!(f, "{}({})", id, param),
             Self::OpUnary((a, b)) => write!(f, "{}({})", a, b),
             Self::OpExp((a, b, c)) => write!(f, "({}) {} ({})", a, b, c),
         }
