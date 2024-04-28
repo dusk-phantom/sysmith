@@ -34,7 +34,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                     c.expected = ExpectedType {
                         is_const: false,
                         value_type: x.clone(),
-                        bound: IntBound::None,
+                        bound: NumBound::None,
                     };
                     if !c.can_arbitrary(PhantomData::<Exp>) {
                         can_arbitrary = false;
@@ -93,7 +93,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                         c.expected = ExpectedType {
                             is_const: false,
                             value_type: x.clone(),
-                            bound: IntBound::None,
+                            bound: NumBound::None,
                         };
                         c.arbitrary(u)
                     })
@@ -117,7 +117,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
             c.expected = ExpectedType {
                 is_const: true,
                 value_type: Type::Int,
-                bound: IntBound::new(0, len - 1),
+                bound: NumBound::new(0, len - 1),
             };
             let exp = c.arbitrary(u)?;
 
@@ -203,7 +203,7 @@ impl<'a> ArbitraryTo<'a, Exp> for BinaryOpContext<'_> {
         // Apply a bound to RHS according to binary operator generated
         let mut ctx = self.0.clone();
         if let BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod = b {
-            ctx.expected.bound = IntBound::NonZero;
+            ctx.expected.bound = NumBound::NonZero;
         }
 
         // Generate RHS
@@ -373,15 +373,12 @@ impl Eval for LVal {
             let index_value: Value = exp.eval(ctx);
             match (array_type, array_value) {
                 (Type::Array(content_type, content_len), Value::Array(content_value)) => {
-                    if let Value::Int(i) = index_value {
-                        if i < 0 || i >= content_len {
-                            panic!("Index out of range")
-                        }
-                        array_type = *content_type;
-                        array_value = content_value[i as usize].clone();
-                    } else {
-                        panic!("Index must be an integer")
+                    let i = index_value.as_int();
+                    if i < 0 || i >= content_len {
+                        panic!("Index out of range")
                     }
+                    array_type = *content_type;
+                    array_value = content_value[i as usize].clone();
                 }
                 _ => panic!("Not an array"),
             }

@@ -16,7 +16,7 @@ impl<'a> Arbitrary<'a> for CompUnit {
             expected: ExpectedType {
                 is_const: false,
                 value_type: Type::Void,
-                bound: IntBound::None,
+                bound: NumBound::None,
             },
             return_type: Type::Void,
             in_loop: false,
