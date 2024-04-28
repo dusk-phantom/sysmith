@@ -32,31 +32,35 @@ impl NumBound {
         // Apply wrapping for constant expressions
         match self {
             NumBound::None => exp,
-            NumBound::NonZero => {
-                match exp.eval(c) {
-                    Value::Int(a) => {
-                        let delta = if a == 0 { 1 } else { 0 };
-                        Exp::OpExp((
-                            Box::new(exp),
-                            BinaryOp::Add,
-                            Box::new(Exp::Number(Number::IntConst(delta))),
-                        ))
-                    }
-                    Value::Float(a) => {
-                        let delta = if a == 0.0 { 1 } else { 0 };
-                        Exp::OpExp((
-                            Box::new(exp),
-                            BinaryOp::Add,
-                            Box::new(Exp::Number(Number::IntConst(delta))),
-                        ))
-                    }
-                    _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
+            NumBound::NonZero => match exp.eval(c) {
+                Value::Int(a) => {
+                    let delta = if a == 0 { 1 } else { 0 };
+                    Exp::OpExp((
+                        Box::new(exp),
+                        BinaryOp::Add,
+                        Box::new(Exp::Number(Number::IntConst(delta))),
+                    ))
                 }
+                Value::Float(a) => {
+                    let delta = if a == 0.0 { 1 } else { 0 };
+                    Exp::OpExp((
+                        Box::new(exp),
+                        BinaryOp::Add,
+                        Box::new(Exp::Number(Number::IntConst(delta))),
+                    ))
+                }
+                _ => panic!(
+                    "Expected a constant numeric expression, got: {:?}",
+                    exp.eval(c)
+                ),
             },
             NumBound::Range(min, max) => {
                 match exp.eval(c) {
                     Value::Int(a) => {
-                        let delta = a.rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a);
+                        let delta = a
+                            .rem_euclid(max - min + 1)
+                            .wrapping_add(*min)
+                            .wrapping_sub(a);
                         Exp::OpExp((
                             Box::new(exp),
                             BinaryOp::Add,
@@ -66,11 +70,16 @@ impl NumBound {
                     Value::Float(a) => {
                         // Float const as integer will cause numeric problems,
                         // so we just replace it with an integer constant
-                        Exp::Number(Number::IntConst((a as i32).rem_euclid(max - min + 1).wrapping_add(*min)))
+                        Exp::Number(Number::IntConst(
+                            (a as i32).rem_euclid(max - min + 1).wrapping_add(*min),
+                        ))
                     }
-                    _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
+                    _ => panic!(
+                        "Expected a constant numeric expression, got: {:?}",
+                        exp.eval(c)
+                    ),
                 }
-            },
+            }
         }
     }
 }
