@@ -10,12 +10,6 @@ impl From<String> for Ident {
     }
 }
 
-impl From<Ident> for String {
-    fn from(i: Ident) -> Self {
-        i.0
-    }
-}
-
 impl<'a> ArbitraryTo<'a, Ident> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Ident> {
         /// Generate a random head character for an identifier
