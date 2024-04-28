@@ -105,6 +105,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for Context {
         // All possible choices
         let contexts = [
             Box::new(AssignContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
+            Box::new(BlockContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
             Box::new(ExpContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
             Box::new(IfContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
             Box::new(WhileContext(&c)) as Box<dyn ArbitraryTo<Stmt>>,
@@ -128,6 +129,21 @@ impl Display for Stmt {
             Stmt::Continue => write!(f, "continue;"),
             Stmt::Return(a) => write!(f, "{}", a),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BlockContext<'a>(&'a Context);
+
+impl<'a> ArbitraryTo<'a, Stmt> for BlockContext<'_> {
+    fn can_arbitrary(&self, _: PhantomData<Stmt>) -> bool {
+        // Prevent block from being too deep
+        self.0.depth_is_valid()
+    }
+
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Stmt> {
+        let block = self.0.arbitrary(u)?;
+        Ok(Stmt::Block(block))
     }
 }
 
