@@ -16,14 +16,15 @@ pub trait ArbitraryTo<'a, T> {
 }
 
 /// Check if any of the ArbitraryTo can generate an instance of T
-pub fn can_arbitrary_any<'a, T>(v: &[Box<dyn ArbitraryTo<'a, T> + 'a>]) -> bool
-{
+pub fn can_arbitrary_any<'a, T>(v: &[Box<dyn ArbitraryTo<'a, T> + 'a>]) -> bool {
     v.iter().any(|x| x.can_arbitrary(PhantomData))
 }
 
 /// Generate an arbitrary instance of T from any of the ArbitraryTo
-pub fn arbitrary_any<'a, T>(u: &mut Unstructured<'a>, v: &[Box<dyn ArbitraryTo<'a, T> + '_>]) -> Result<T>
-{
+pub fn arbitrary_any<'a, T>(
+    u: &mut Unstructured<'a>,
+    v: &[Box<dyn ArbitraryTo<'a, T> + '_>],
+) -> Result<T> {
     // Get a mapping of nth avaliable ArbitraryTo
     let mut map = Vec::new();
     for (i, x) in v.iter().enumerate() {

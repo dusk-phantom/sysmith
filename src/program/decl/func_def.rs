@@ -9,10 +9,13 @@ impl Resolve for FuncDef {
     fn resolve(&self, ctx: &mut Context) {
         match self {
             FuncDef::ParameterFuncDef((a, b, c, _)) => {
-                ctx.ctx.insert(b.to_string(), Type::Func(
-                    Box::new(a.clone().into()), 
-                    c.func_fparams_vec.iter().map(|x| x.to_type(ctx)).collect(),
-                ));
+                ctx.ctx.insert(
+                    b.to_string(),
+                    Type::Func(
+                        Box::new(a.clone().into()),
+                        c.func_fparams_vec.iter().map(|x| x.to_type(ctx)).collect(),
+                    ),
+                );
             }
         }
     }
