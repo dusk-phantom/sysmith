@@ -166,7 +166,14 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
 
         // Collapse array type,
         // did not allow assigning an array to another
-        while let Type::Array(t, _) = current_type {
+        while let Type::Array(t, len) = current_type {
+            // If array length is 0, it contains nothing
+            if len == 0 {
+                return false;
+            }
+            
+            // Otherwise continue collapsing type,
+            // because midway assignment `int x[3][3]; x[1] = y;` is not allowed
             current_type = *t;
         }
 
