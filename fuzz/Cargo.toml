@@ -11,6 +11,14 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 sy-smith = { path = ".." }
 
+[dependencies.uuid]
+version = "1.8.0"
+features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
+
 [[bin]]
 name = "genner"
 path = "fuzz_targets/genner.rs"
