@@ -50,7 +50,13 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         // If type is array, recursively check if content type matches
         // until content type is no longer an array
         let mut current_type = &self.ty;
-        while let Type::Array(content_type, _) = current_type {
+        while let Type::Array(content_type, len) = current_type {
+            // If array length is 0, it contains nothing
+            if *len == 0 {
+                return false;
+            }
+
+            // Otherwise check if content type matches
             current_type = content_type;
             if *current_type == self.ctx.expected.value_type {
                 return true;

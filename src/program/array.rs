@@ -17,7 +17,7 @@ impl<'a> ArbitraryTo<'a, Index> for Context {
             c.expected = ExpectedType {
                 is_const: true,
                 value_type: Type::Int,
-                bound: IntBound::new(1, MAX_ARR_LEN),
+                bound: IntBound::new(0, MAX_ARR_LEN),
             };
             let exp = c.arbitrary(u)?;
             index.push(exp);
