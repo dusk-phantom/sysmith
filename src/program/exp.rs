@@ -15,25 +15,27 @@ pub struct SingleVarContext<'a> {
 impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
         // If expected constant, do not refer to variable
-        // TODO refer to constant only
-        if self.ctx.expected_const {
+        if self.ctx.expected.is_const {
             return false;
         }
 
         // If type match, using this variable is OK
-        if self.ty == self.ctx.expected_type {
+        if self.ty == self.ctx.expected.value_type {
             return true;
         }
 
         // If type is function, check if return type matches
         // If matches, check if argument can be filled
         if let Type::Func(ret_type, param) = &self.ty {
-            if **ret_type == self.ctx.expected_type {
+            if **ret_type == self.ctx.expected.value_type {
                 let mut can_arbitrary = true;
                 for x in param.iter() {
                     let mut c = self.ctx.clone();
-                    c.expected_type = x.clone();
-                    c.expected_const = false;
+                    c.expected = ExpectedType {
+                        is_const: false,
+                        value_type: x.clone(),
+                        bound: None,
+                    };
                     if !c.can_arbitrary(PhantomData::<Exp>) {
                         can_arbitrary = false;
                         break;
@@ -50,7 +52,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         let mut current_type = &self.ty;
         while let Type::Array(content_type, _) = current_type {
             current_type = content_type;
-            if *current_type == self.ctx.expected_type {
+            if *current_type == self.ctx.expected.value_type {
                 return true;
             }
         }
@@ -66,7 +68,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         let id = id.clone();
 
         // If type match, directly add as candidate
-        if *ty == c.expected_type {
+        if *ty == c.expected.value_type {
             return Ok(Exp::LVal(LVal {
                 id,
                 index: Index(Vec::new()),
@@ -76,14 +78,17 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         // If type is function, check if return type matches
         // If matches, add as candidate
         if let Type::Func(ret_type, param) = ty {
-            if **ret_type == c.expected_type {
+            if **ret_type == c.expected.value_type {
                 // Map parameters to arbitrary instances of its type
                 return param
                     .iter()
                     .map(|x| {
                         let mut c = c.clone();
-                        c.expected_type = x.clone();
-                        c.expected_const = false;
+                        c.expected = ExpectedType {
+                            is_const: false,
+                            value_type: x.clone(),
+                            bound: None,
+                        };
                         c.arbitrary(u)
                     })
                     .collect::<Result<_, _>>()
@@ -102,16 +107,21 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         };
         while let Type::Array(content_type, len) = current_type {
             // Generate a random index in bound
-            // TODO refer to constant here
-            let index = u.int_in_range(0..=len - 1)?;
+            let mut c = self.ctx.clone();
+            c.expected = ExpectedType {
+                is_const: false,
+                value_type: Type::Int,
+                bound: Some(IntBound::new(0, len - 1)),
+            };
+            let exp = c.arbitrary(u)?;
 
             // Update current processing type and expression
             current_type = content_type;
             current_exp
                 .index
                 .0
-                .push(Exp::Number(Number::IntConst(index)));
-            if *current_type == c.expected_type {
+                .push(exp);
+            if *current_type == c.expected.value_type {
                 return Ok(Exp::LVal(current_exp));
             }
         }
@@ -176,7 +186,7 @@ pub struct BinaryOpContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for BinaryOpContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        self.0.expected_type.is_numeric() && self.0.depth_is_valid()
+        self.0.expected.value_type.is_numeric() && self.0.depth_is_valid()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -195,7 +205,7 @@ pub struct UnaryOpContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for UnaryOpContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        self.0.expected_type.is_numeric() && self.0.depth_is_valid()
+        self.0.expected.value_type.is_numeric() && self.0.depth_is_valid()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -213,7 +223,7 @@ pub struct NumberContext<'a>(&'a Context);
 
 impl<'a> ArbitraryTo<'a, Exp> for NumberContext<'_> {
     fn can_arbitrary(&self, _: PhantomData<Exp>) -> bool {
-        self.0.expected_type.is_numeric()
+        self.0.expected.value_type.is_numeric()
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
@@ -248,6 +258,12 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
+        // If expected int in range, directly generate
+        // TODO refer to constant
+        if let Some(IntBound { min, max }) = self.expected.bound {
+            return Ok(Exp::Number(Number::IntConst(u.int_in_range(min..=max)?)));
+        }
+
         // Increase context depth
         let c = self.next();
 
@@ -373,7 +389,7 @@ pub enum Number {
 
 impl<'a> ArbitraryTo<'a, Number> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Number> {
-        match self.expected_type {
+        match self.expected.value_type {
             Type::Int => Ok(Number::IntConst(IntConst::arbitrary(u)?)),
             Type::Float => Ok(Number::FloatConst(FloatConst::arbitrary(u)?)),
             _ => panic!("Invalid type for a number literal"),
