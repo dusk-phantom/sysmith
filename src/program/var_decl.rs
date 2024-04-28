@@ -33,7 +33,7 @@ impl<'a> ArbitraryTo<'a, VarDecl> for Context {
         c.expected = ExpectedType {
             is_const,
             value_type: btype.clone().into(),
-            bound: None,
+            bound: IntBound::None,
         };
 
         // Generate at lease one definition
@@ -88,7 +88,7 @@ impl<'a> ArbitraryTo<'a, VarDef> for Context {
         c.expected = ExpectedType {
             is_const: c.expected.is_const,
             value_type: var_type.clone(),
-            bound: None,
+            bound: IntBound::None,
         };
         let init_val = c.arbitrary(u)?;
 
@@ -127,7 +127,7 @@ impl<'a> ArbitraryTo<'a, VarInitVal> for Context {
                 c.expected = ExpectedType {
                     is_const: false,
                     value_type: *content_type.clone(),
-                    bound: None,
+                    bound: IntBound::None,
                 };
 
                 // Fill array with random contents

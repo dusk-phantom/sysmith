@@ -190,7 +190,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
             c.expected = ExpectedType {
                 is_const: true,
                 value_type: Type::Int,
-                bound: Some(IntBound::new(0, len - 1)),
+                bound: IntBound::new(0, len - 1),
             };
             let exp = c.arbitrary(u)?;
 
@@ -207,7 +207,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
         c.expected = ExpectedType {
             is_const: false,
             value_type: ty.clone(),
-            bound: None,
+            bound: IntBound::None,
         };
 
         // Generate a expression of matching type
@@ -269,7 +269,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for ExpContext<'_> {
             c.expected = ExpectedType {
                 is_const: false,
                 value_type: func_type.clone().into(),
-                bound: None,
+                bound: IntBound::None,
             };
 
             // Generate a random statement of this type (non-constant)
@@ -316,7 +316,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for IfContext<'_> {
         c.expected = ExpectedType {
             is_const: false,
             value_type: Type::Int,
-            bound: None,
+            bound: IntBound::None,
         };
         let cond = c.arbitrary(u)?;
 
@@ -365,7 +365,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for WhileContext<'_> {
         c.expected = ExpectedType {
             is_const: false,
             value_type: Type::Int,
-            bound: None,
+            bound: IntBound::None,
         };
         let cond = c.arbitrary(u)?;
 
@@ -436,7 +436,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for ReturnContext<'_> {
                 c.expected = ExpectedType {
                     is_const: false,
                     value_type: c.return_type.clone(),
-                    bound: None,
+                    bound: IntBound::None,
                 };
                 Some(c.arbitrary(u)?)
             }
