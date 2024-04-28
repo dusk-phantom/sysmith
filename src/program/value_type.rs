@@ -64,12 +64,9 @@ impl NumBound {
                         ))
                     }
                     Value::Float(a) => {
-                        let delta = (a as i32).rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a as i32);
-                        Exp::OpExp((
-                            Box::new(exp),
-                            BinaryOp::Add,
-                            Box::new(Exp::Number(Number::IntConst(delta))),
-                        ))
+                        // Float const as integer will cause numeric problems,
+                        // so we just replace it with an integer constant
+                        Exp::Number(Number::IntConst((a as i32).rem_euclid(max - min + 1).wrapping_add(*min)))
                     }
                     _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
                 }

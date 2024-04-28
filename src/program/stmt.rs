@@ -192,10 +192,11 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
         // Collapse array type,
         // did not allow assigning an array to another
         while let Type::Array(t, len) = ty {
-            // Generate a random index in bound
+            // Generate a random index in bound,
+            // although the bound is not checked because non-constant
             let mut c = self.ctx.clone();
             c.expected = ExpectedType {
-                is_const: true,
+                is_const: false,
                 value_type: Type::Int,
                 bound: NumBound::new(0, len - 1),
             };
