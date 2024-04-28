@@ -59,8 +59,8 @@ pub struct FuncFParams {
 impl<'a> ArbitraryTo<'a, FuncFParams> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<FuncFParams> {
         let mut func_fparams_vec = Vec::new();
+        // Generate zero or more function params
         for _ in 0..MAX_VEC_LEN {
-            // Generate zero or more function params
             if u.arbitrary()? {
                 break;
             }
