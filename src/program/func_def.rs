@@ -22,7 +22,7 @@ impl<'a> ArbitraryTo<'a, FuncDef> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<FuncDef> {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
-        let ident = Ident::arbitrary(u)?;
+        let ident = self.arbitrary(u)?;
         let func_fparams = self.arbitrary(u)?;
 
         // Initialize a context expecting return type `func_type`
@@ -106,13 +106,13 @@ impl<'a> ArbitraryTo<'a, FuncFParam> for Context {
             0 => {
                 // Generate signature
                 let btype = BType::arbitrary(u)?;
-                let ident = Ident::arbitrary(u)?;
+                let ident = self.arbitrary(u)?;
                 Ok(FuncFParam::NonArray((btype, ident)))
             }
             1 => {
                 // Generate signature
                 let btype = BType::arbitrary(u)?;
-                let ident = Ident::arbitrary(u)?;
+                let ident = self.arbitrary(u)?;
 
                 // Generate random array type
                 let var_index = self.arbitrary(u)?;

@@ -188,7 +188,7 @@ impl<'a> ArbitraryTo<'a, Stmt> for SingleAssignContext<'_> {
             // Generate a random index in bound
             let mut c = self.ctx.clone();
             c.expected = ExpectedType {
-                is_const: false,
+                is_const: true,
                 value_type: Type::Int,
                 bound: Some(IntBound::new(0, len - 1)),
             };

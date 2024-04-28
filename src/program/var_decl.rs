@@ -37,17 +37,17 @@ impl<'a> ArbitraryTo<'a, VarDecl> for Context {
         };
 
         // Generate at lease one definition
-        let mut const_def_vec = Vec::new();
+        let mut def_vec = Vec::new();
         for _ in 0..MAX_VEC_LEN {
-            let const_def = c.arbitrary(u)?;
-            const_def_vec.push(const_def);
+            let def = c.arbitrary(u)?;
+            def_vec.push(def);
             if u.arbitrary()? {
                 break;
             }
         }
         Ok(VarDecl {
             btype,
-            def_vec: PVec(const_def_vec),
+            def_vec: PVec(def_vec),
         })
     }
 }
@@ -77,7 +77,7 @@ pub struct VarDef {
 impl<'a> ArbitraryTo<'a, VarDef> for Context {
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<VarDef> {
         // Generate a random identifier for this definition
-        let ident = Ident::arbitrary(u)?;
+        let ident = self.arbitrary(u)?;
 
         // Generate random array type
         let index: Index = self.arbitrary(u)?;

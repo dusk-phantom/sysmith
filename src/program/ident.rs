@@ -23,16 +23,37 @@ where
 }
 
 /// Identifier, character is limited
-#[derive(Debug, Clone, Arbitrary)]
-pub struct Ident(PVec<IdentChar>);
+#[derive(Debug, Clone)]
+pub struct Ident(pub Vec<IdentChar>);
 
 impl From<String> for Ident {
     fn from(s: String) -> Self {
-        let v = s
+        Ident(s
             .chars()
             .map(|c| IdentChar(c as u8))
-            .collect::<Vec<IdentChar>>();
-        Ident(PVec(v))
+            .collect::<Vec<IdentChar>>())
+    }
+}
+
+impl<'a> ArbitraryTo<'a, Ident> for Context {
+    fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Ident> {
+        let mut ident = Ident(Vec::new());
+
+        // Generate at least one character
+        for _ in 0..MAX_VEC_LEN {
+            let c = IdentChar::arbitrary(u)?;
+            ident.0.push(c);
+            if u.arbitrary()? {
+                break;
+            }
+        }
+
+        // While identifier exists in context, add another random character
+        while self.ctx.contains_key(&ident.to_string()) {
+            let c = IdentChar::arbitrary(u)?;
+            ident.0.push(c);
+        }
+        Ok(ident)
     }
 }
 
