@@ -190,9 +190,18 @@ impl<'a> ArbitraryTo<'a, Exp> for BinaryOpContext<'_> {
     }
 
     fn arbitrary(&self, u: &mut Unstructured<'a>) -> Result<Exp> {
+        // Generate LHS and operator first
         let a = Box::new(self.0.arbitrary(u)?);
         let b = BinaryOp::arbitrary(u)?;
-        let c = Box::new(self.0.arbitrary(u)?);
+        
+        // Apply a bound to RHS according to binary operator generated
+        let mut ctx = self.0.clone();
+        if let BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod = b {
+            ctx.expected.bound = IntBound::NonZero;
+        }
+
+        // Generate RHS
+        let c = Box::new(ctx.arbitrary(u)?);
         Ok(Exp::OpExp((a, b, c)))
     }
 }

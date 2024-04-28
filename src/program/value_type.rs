@@ -24,14 +24,40 @@ impl IntBound {
 
     /// Wrap a given expression into range
     pub fn wrap(&self, exp: Exp, c: &Context) -> Exp {
+        // If not expected constant, return the expression as is
+        if !c.expected.is_const {
+            return exp;
+        }
+
+        // Apply wrapping for constant expressions
         match self {
             IntBound::None => exp,
-            IntBound::NonZero => todo!(),
+            IntBound::NonZero => {
+                match exp.eval(c) {
+                    Value::Int(a) => {
+                        let delta = if a == 0 { 1 } else { 0 };
+                        Exp::OpExp((
+                            Box::new(exp),
+                            BinaryOp::Add,
+                            Box::new(Exp::Number(Number::IntConst(delta))),
+                        ))
+                    }
+                    Value::Float(a) => {
+                        let delta = if a == 0.0 { 1 } else { 0 };
+                        Exp::OpExp((
+                            Box::new(exp),
+                            BinaryOp::Add,
+                            Box::new(Exp::Number(Number::IntConst(delta))),
+                        ))
+                    }
+                    _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
+                }
+            },
             IntBound::Range(min, max) => {
                 let Value::Int(a) = exp.eval(c) else {
-                    panic!("Expected const int in range, but got non-integer");
+                    panic!("Expected a constant integer expression, got: {:?}", exp.eval(c));
                 };
-                let delta = a.rem_euclid(max - min + 1) + min - a;
+                let delta = a.rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a);
                 Exp::OpExp((
                     Box::new(exp),
                     BinaryOp::Add,
