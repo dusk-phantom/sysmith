@@ -128,7 +128,7 @@ impl<'a> ArbitraryTo<'a, VarInitVal> for Context {
                 // Constant flag inherits from parent context
                 let mut c = self.clone();
                 c.expected = ExpectedType {
-                    is_const: false,
+                    is_const: c.expected.is_const,
                     value_type: *content_type.clone(),
                     bound: NumBound::None,
                 };

@@ -32,7 +32,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                 for x in param.iter() {
                     let mut c = self.ctx.clone();
                     c.expected = ExpectedType {
-                        is_const: false,
+                        is_const: c.expected.is_const,
                         value_type: x.clone(),
                         bound: NumBound::None,
                     };
@@ -91,7 +91,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
                     .map(|x| {
                         let mut c = c.clone();
                         c.expected = ExpectedType {
-                            is_const: false,
+                            is_const: c.expected.is_const,
                             value_type: x.clone(),
                             bound: NumBound::None,
                         };
@@ -115,7 +115,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
             // Generate a random index in bound
             let mut c = self.ctx.clone();
             c.expected = ExpectedType {
-                is_const: true,
+                is_const: c.expected.is_const,
                 value_type: Type::Int,
                 bound: NumBound::new(0, len - 1),
             };
