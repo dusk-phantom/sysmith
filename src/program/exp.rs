@@ -271,18 +271,8 @@ impl<'a> ArbitraryTo<'a, Exp> for Context {
         ];
         let result = arbitrary_any(u, &contexts)?;
 
-        // If expected int in range, wrap it to range
-        if let IntBound::Range(min, max) = self.expected.bound {
-            let Value::Int(a) = result.eval(&c) else {
-                panic!("Expected const int in range, but got non-integer");
-            };
-            let delta = a.rem_euclid(max - min + 1) + min - a;
-            return Ok(Exp::OpExp((
-                Box::new(result),
-                BinaryOp::Add,
-                Box::new(Exp::Number(Number::IntConst(delta))),
-            )));
-        }
+        // Wrap generated expression to range
+        let result = self.expected.bound.wrap(result, &c);
 
         // Otherwise directly return result
         Ok(result)
