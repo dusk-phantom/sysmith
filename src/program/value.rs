@@ -25,7 +25,7 @@ impl std::ops::Add for Value {
 
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
             (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 + b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a + b as f32),
@@ -39,7 +39,7 @@ impl std::ops::Sub for Value {
 
     fn sub(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
             (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 - b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a - b as f32),
@@ -53,7 +53,7 @@ impl std::ops::Mul for Value {
 
     fn mul(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
             (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 * b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a * b as f32),
