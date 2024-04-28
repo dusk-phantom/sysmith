@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct VarDecl {
+    pub is_const: bool,
     pub btype: BType,
     pub def_vec: Vec<VarDef>,
 }
@@ -14,7 +15,7 @@ impl Resolve for VarDecl {
             ctx.ctx.insert(def.ident.to_string(), var_type);
 
             // Add to env if constant
-            if ctx.expected.is_const {
+            if self.is_const {
                 let val = def.init_val.eval(ctx);
                 ctx.env.insert(def.ident.to_string(), val);
             }
@@ -46,6 +47,7 @@ impl<'a> ArbitraryTo<'a, VarDecl> for Context {
             }
         }
         Ok(VarDecl {
+            is_const,
             btype,
             def_vec,
         })
@@ -56,7 +58,8 @@ impl Display for VarDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "const {} {};",
+            "{}{} {};",
+            if self.is_const { "const " } else { "" },
             self.btype,
             self.def_vec
                 .iter()
