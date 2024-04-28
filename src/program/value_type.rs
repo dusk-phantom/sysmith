@@ -21,6 +21,25 @@ impl IntBound {
     pub fn new(min: i32, max: i32) -> Self {
         IntBound::Range(min, max)
     }
+
+    /// Wrap a given expression into range
+    pub fn wrap(&self, exp: Exp, c: &Context) -> Exp {
+        match self {
+            IntBound::None => exp,
+            IntBound::NonZero => todo!(),
+            IntBound::Range(min, max) => {
+                let Value::Int(a) = exp.eval(c) else {
+                    panic!("Expected const int in range, but got non-integer");
+                };
+                let delta = a.rem_euclid(max - min + 1) + min - a;
+                Exp::OpExp((
+                    Box::new(exp),
+                    BinaryOp::Add,
+                    Box::new(Exp::Number(Number::IntConst(delta))),
+                ))
+            },
+        }
+    }
 }
 
 /// All possible types
