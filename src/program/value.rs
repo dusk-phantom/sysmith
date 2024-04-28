@@ -8,6 +8,16 @@ pub enum Value {
     Array(Vec<Value>),
 }
 
+impl Value {
+    pub fn as_int(&self) -> i32 {
+        match self {
+            Value::Int(a) => *a,
+            Value::Float(a) => *a as i32,
+            _ => panic!("Value is not a number: {:?}", self),
+        }
+    }
+}
+
 impl std::ops::Neg for Value {
     type Output = Self;
 

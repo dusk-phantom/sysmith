@@ -5,21 +5,21 @@ use super::*;
 pub struct ExpectedType {
     pub is_const: bool,
     pub value_type: Type,
-    pub bound: IntBound,
+    pub bound: NumBound,
 }
 
 /// Bound on integer type
 #[derive(Debug, Clone)]
-pub enum IntBound {
+pub enum NumBound {
     None,
     NonZero,
     Range(i32, i32),
 }
 
-impl IntBound {
+impl NumBound {
     /// [min, max]
     pub fn new(min: i32, max: i32) -> Self {
-        IntBound::Range(min, max)
+        NumBound::Range(min, max)
     }
 
     /// Wrap a given expression into range
@@ -31,8 +31,8 @@ impl IntBound {
 
         // Apply wrapping for constant expressions
         match self {
-            IntBound::None => exp,
-            IntBound::NonZero => {
+            NumBound::None => exp,
+            NumBound::NonZero => {
                 match exp.eval(c) {
                     Value::Int(a) => {
                         let delta = if a == 0 { 1 } else { 0 };
@@ -53,16 +53,26 @@ impl IntBound {
                     _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
                 }
             },
-            IntBound::Range(min, max) => {
-                let Value::Int(a) = exp.eval(c) else {
-                    panic!("Expected a constant integer expression, got: {:?}", exp.eval(c));
-                };
-                let delta = a.rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a);
-                Exp::OpExp((
-                    Box::new(exp),
-                    BinaryOp::Add,
-                    Box::new(Exp::Number(Number::IntConst(delta))),
-                ))
+            NumBound::Range(min, max) => {
+                match exp.eval(c) {
+                    Value::Int(a) => {
+                        let delta = a.rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a);
+                        Exp::OpExp((
+                            Box::new(exp),
+                            BinaryOp::Add,
+                            Box::new(Exp::Number(Number::IntConst(delta))),
+                        ))
+                    }
+                    Value::Float(a) => {
+                        let delta = (a as i32).rem_euclid(max - min + 1).wrapping_add(*min).wrapping_sub(a as i32);
+                        Exp::OpExp((
+                            Box::new(exp),
+                            BinaryOp::Add,
+                            Box::new(Exp::Number(Number::IntConst(delta))),
+                        ))
+                    }
+                    _ => panic!("Expected a constant numeric expression, got: {:?}", exp.eval(c)),
+                }
             },
         }
     }

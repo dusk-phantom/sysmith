@@ -17,7 +17,7 @@ impl<'a> ArbitraryTo<'a, Index> for Context {
             c.expected = ExpectedType {
                 is_const: true,
                 value_type: Type::Int,
-                bound: IntBound::new(0, MAX_ARR_LEN),
+                bound: NumBound::new(0, MAX_ARR_LEN),
             };
             let exp = c.arbitrary(u)?;
             index.push(exp);
@@ -31,9 +31,7 @@ impl Index {
         // Apply the array index to the base type
         // Reverse order: int x[2][8] -> [[int x 8] x 2]
         for exp in self.0.iter().rev() {
-            let Value::Int(i) = exp.eval(c) else {
-                panic!("Const expression as index of array must be an integer")
-            };
+            let i = exp.eval(c).as_int();
             base_type = Type::Array(base_type.into(), i);
         }
         base_type
