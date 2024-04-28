@@ -14,7 +14,7 @@ impl<'a> ArbitraryTo<'a, Block> for Context {
 
         // Generate zero or more predecessing block items
         for _ in 0..MAX_VEC_LEN {
-            if !u.arbitrary()? {
+            if u.arbitrary()? {
                 break;
             }
             let block_item: BlockItem = local_context.arbitrary(u)?;
