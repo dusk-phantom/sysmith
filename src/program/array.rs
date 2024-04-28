@@ -15,7 +15,7 @@ impl<'a> ArbitraryTo<'a, Index> for Context {
             // Generate a random integer
             let mut c = self.clone();
             c.expected = ExpectedType {
-                is_const: false,
+                is_const: true,
                 value_type: Type::Int,
                 bound: Some(IntBound::new(1, MAX_ARR_LEN)),
             };
