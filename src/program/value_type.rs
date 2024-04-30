@@ -99,6 +99,15 @@ impl Type {
     pub fn is_numeric(&self) -> bool {
         matches!(self, Type::Int | Type::Float)
     }
+
+    /// View as an array (for pointer and array)
+    pub fn as_array(&self) -> Option<(&Type, &i32)> {
+        match self {
+            Type::Pointer(t) => Some((t, &MAX_ARR_LEN)),
+            Type::Array(t, n) => Some((t, n)),
+            _ => None,
+        }
+    }
 }
 
 impl PartialEq for Type {

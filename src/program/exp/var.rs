@@ -48,7 +48,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
         // If type is array, recursively check if content type matches
         // until content type is no longer an array
         let mut current_type = &self.ty;
-        while let Type::Array(content_type, len) = current_type {
+        while let Some((content_type, len)) = current_type.as_array() {
             // If array length is 0, it contains nothing
             if *len == 0 {
                 return false;
@@ -107,7 +107,7 @@ impl<'a> ArbitraryTo<'a, Exp> for SingleVarContext<'_> {
             id: id.clone(),
             index: Index(Vec::new()),
         };
-        while let Type::Array(content_type, len) = current_type {
+        while let Some((content_type, len)) = current_type.as_array() {
             // Generate a random index in bound
             let mut c = self.ctx.clone();
             c.expected = ExpectedType {
