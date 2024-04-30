@@ -26,11 +26,14 @@ impl<'a> ArbitraryTo<'a, FuncDef> for Context {
         // Generate a random function signature
         let func_type = FuncType::arbitrary(u)?;
         let ident = self.arbitrary(u)?;
-        let func_fparams = self.arbitrary(u)?;
+        let func_fparams: FuncFParams = self.arbitrary(u)?;
 
         // Initialize a context expecting return type `func_type`
         let mut c = self.clone();
         c.return_type = func_type.clone().into();
+
+        // Resolve parameters into context
+        func_fparams.resolve(&mut c);
 
         // Generate function statements with return type specified
         let block = c.arbitrary(u)?;
@@ -55,6 +58,15 @@ impl Display for FuncDef {
 #[derive(Debug, Clone)]
 pub struct FuncFParams {
     pub func_fparams_vec: Vec<FuncFParam>,
+}
+
+impl Resolve for FuncFParams {
+    fn resolve(&self, ctx: &mut Context) {
+        for func_fparam in &self.func_fparams_vec {
+            let (FuncFParam::NonArray((_, b)) | FuncFParam::Array((_, b,_))) = func_fparam;
+            ctx.ctx.insert(b.to_string(), func_fparam.to_type(ctx));
+        }
+    }
 }
 
 impl<'a> ArbitraryTo<'a, FuncFParams> for Context {
@@ -95,7 +107,7 @@ pub enum FuncFParam {
 
     /// Array argument, the first dimension is omitted (as pointer).
     /// Even if Index is empty, it is still an array.
-    /// Example: `x[][4]` where index is [4].
+    /// Example: `x[][4]` where index is `[4]`.
     Array((BType, Ident, Index)),
 }
 
@@ -104,8 +116,11 @@ impl FuncFParam {
     fn to_type(&self, c: &Context) -> Type {
         match self {
             FuncFParam::NonArray((a, _)) => a.clone().into(),
-            // FIXME: this is a pointer
-            FuncFParam::Array((a, _, b)) => b.apply(a.clone().into(), c),
+            FuncFParam::Array((a, _, b)) => {
+                // Wrapped in a pointer because pointer dimension
+                // is not present in the type
+                Type::Pointer(b.apply(a.clone().into(), c).into())
+            }
         }
     }
 }
